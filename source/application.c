@@ -21,7 +21,7 @@ void application_init()
     application.next_measurement_time = 0;
 
     application.diagnostics = false;
-    application.sampling_period = 3600;
+    application.sampling_period = 600;
     application_read_from_nvs();
 }
 

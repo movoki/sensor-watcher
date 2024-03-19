@@ -36,6 +36,10 @@ bool backends_read_from_nvs()
     if(err == ESP_OK) {
         memset(backends, 0, sizeof(backends));
         for(uint8_t i = 0; i < BACKENDS_NUM_MAX && ok; i++) {
+            snprintf(nvs_key, sizeof(nvs_key), "%u_service", i % 255);
+            length = BACKEND_SERVICE_LENGTH;
+            ok = ok && !nvs_get_str(handle, nvs_key, backends[i].service, &length);
+
             snprintf(nvs_key, sizeof(nvs_key), "%u_auth", i % 255);
             ok = ok && !nvs_get_u8(handle, nvs_key, &(backends[i].auth));
 
@@ -118,6 +122,8 @@ bool backends_write_to_nvs()
     err = nvs_open("backends", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
         for(uint8_t i = 0; i < BACKENDS_NUM_MAX && ok; i++) {
+            snprintf(nvs_key, sizeof(nvs_key), "%u_service", i % 255);
+            ok = ok && !nvs_set_str(handle, nvs_key, backends[i].service);
             snprintf(nvs_key, sizeof(nvs_key), "%u_auth", i % 255);
             ok = ok && !nvs_set_u8(handle, nvs_key, backends[i].auth);
             snprintf(nvs_key, sizeof(nvs_key), "%u_format", i % 255);
@@ -219,15 +225,16 @@ bool backend_pack(bp_pack_t *writer, uint32_t index)
     ok = ok && bp_put_string(writer, "error") && bp_put_integer(writer, backends[index].error);
     ok = ok && bp_put_string(writer, "message") && bp_put_string(writer, backends[index].message);
 
-    ok = ok && bp_put_string(writer, "auth") && bp_put_string(writer, backend_auth_labels[backends[index].auth < BACKEND_AUTH_NUM_MAX ? backends[index].auth : 0]);
-    ok = ok && bp_put_string(writer, "format") && bp_put_string(writer, backend_format_labels[backends[index].format < BACKEND_FORMAT_NUM_MAX ? backends[index].format : 0]);
+    ok = ok && bp_put_string(writer, "service") && bp_put_string(writer, backends[index].service);
     ok = ok && bp_put_string(writer, "uri") && bp_put_string(writer, backends[index].uri);
-    ok = ok && bp_put_string(writer, "server_cert") && bp_put_string(writer, backends[index].server_cert);
+    ok = ok && bp_put_string(writer, "format") && bp_put_string(writer, backend_format_labels[backends[index].format < BACKEND_FORMAT_NUM_MAX ? backends[index].format : 0]);
+    ok = ok && bp_put_string(writer, "auth") && bp_put_string(writer, backend_auth_labels[backends[index].auth < BACKEND_AUTH_NUM_MAX ? backends[index].auth : 0]);
     ok = ok && bp_put_string(writer, "user") && bp_put_string(writer, backends[index].user);
     ok = ok && bp_put_string(writer, "key") && bp_put_string(writer, backends[index].key);
-    ok = ok && bp_put_string(writer, "client_id") && bp_put_string(writer, backends[index].client_id);
+    ok = ok && bp_put_string(writer, "server_cert") && bp_put_string(writer, backends[index].server_cert);
     ok = ok && bp_put_string(writer, "output_topic") && bp_put_string(writer, backends[index].output_topic);
     ok = ok && bp_put_string(writer, "input_topic") && bp_put_string(writer, backends[index].input_topic);
+    ok = ok && bp_put_string(writer, "client_id") && bp_put_string(writer, backends[index].client_id);
     ok = ok && bp_put_string(writer, "content_type") && bp_put_string(writer, backends[index].content_type);
     ok = ok && bp_put_string(writer, "template_header") && bp_put_string(writer, backends[index].template_header);
     ok = ok && bp_put_string(writer, "template_row") && bp_put_string(writer, backends[index].template_row);
@@ -265,6 +272,8 @@ bool backend_unpack(bp_pack_t *reader, uint32_t index)
             else
                 ok = false;
         }
+        else if(bp_match(reader, "service"))
+            ok = ok && bp_get_string(reader, backends[index].service, BACKEND_SERVICE_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
         else if(bp_match(reader, "uri"))
             ok = ok && bp_get_string(reader, backends[index].uri, BACKEND_URI_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
         else if(bp_match(reader, "server_cert"))

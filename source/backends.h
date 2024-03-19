@@ -6,13 +6,14 @@
 
 #define BACKENDS_NUM_MAX	3
 
+#define BACKEND_SERVICE_LENGTH		32
 #define BACKEND_URI_LENGTH			256
 #define BACKEND_PEM_LENGTH			2048
 #define BACKEND_USER_LENGTH			2048
 #define BACKEND_KEY_LENGTH			2048
-#define BACKEND_CLIENT_ID_LENGTH		64
-#define BACKEND_TOPIC_LENGTH			256
-#define BACKEND_MESSAGE_LENGTH		128
+#define BACKEND_CLIENT_ID_LENGTH	64
+#define BACKEND_TOPIC_LENGTH		256
+#define BACKEND_MESSAGE_LENGTH		256
 #define BACKEND_CONTENT_TYPE_LENGTH	64
 
 #define BACKEND_TEMPLATE_HEADER_LENGTH			256
@@ -30,20 +31,21 @@
 typedef struct {
 	uint8_t auth;
 	uint8_t format;
+	char service[BACKEND_SERVICE_LENGTH];
 	char uri[BACKEND_URI_LENGTH];
-	char server_cert[BACKEND_PEM_LENGTH];
 	char user[BACKEND_USER_LENGTH];
 	char key[BACKEND_KEY_LENGTH];
-	char client_id[BACKEND_CLIENT_ID_LENGTH];
+	char server_cert[BACKEND_PEM_LENGTH];
 	char output_topic[BACKEND_TOPIC_LENGTH];
 	char input_topic[BACKEND_TOPIC_LENGTH];
+	char client_id[BACKEND_CLIENT_ID_LENGTH];
 
+	char content_type[BACKEND_CONTENT_TYPE_LENGTH];
 	char template_header[BACKEND_TEMPLATE_HEADER_LENGTH];
 	char template_row[BACKEND_TEMPLATE_ROW_LENGTH];
 	char template_row_separator[BACKEND_TEMPLATE_SEPARATOR_LENGTH];
 	char template_name_separator[BACKEND_TEMPLATE_SEPARATOR_LENGTH];
 	char template_footer[BACKEND_TEMPLATE_FOOTER_LENGTH];
-	char content_type[BACKEND_CONTENT_TYPE_LENGTH];
 
 	void *handle;
 	int32_t status;

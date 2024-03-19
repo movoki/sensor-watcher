@@ -64,6 +64,7 @@ const char *backend_format_labels[] = {
 };
 
 const char *metric_labels[] = {
+	[METRIC_NONE]		 			"",
 	[METRIC_Temperature] 			"Temperature",
 	[METRIC_Humidity]				"Humidity",
 	[METRIC_Pressure]				"Pressure",

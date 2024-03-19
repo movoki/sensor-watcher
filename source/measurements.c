@@ -229,20 +229,27 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
         if(template_row[j] == '@' && j != template_row_length - 1) {
             switch(template_row[j + 1]) {
                 case '@': ok = ok && pbuf_putc(buf, '@'); break;
-                case 'I': ok = ok && pbuf_printf(buf, "%016llX", wifi.mac); break;
-                case 'N': ok = ok && measurements_build_name(buf, index, template_name_separator[0]); break;
-                case 'R': ok = ok && pbuf_printf(buf, "%s", resource_labels[measurements[index].resource]); break;
+                case 'i': ok = ok && pbuf_printf(buf, "%016llX", wifi.mac); break;
+                case 'n': ok = ok && measurements_build_name(buf, index, template_name_separator[0]); break;
+                case 'r': ok = ok && pbuf_printf(buf, "%s", resource_labels[measurements[index].resource]); break;
+                case 'R': ok = ok && pbuf_printf(buf, "%s", measurements[index].resource ? resource_labels[measurements[index].resource] : "none"); break;
                 case 'b': ok = ok && pbuf_printf(buf, "%u", measurements[index].bus); break;
-                case 'm': ok = ok && pbuf_printf(buf, "%u", measurements[index].multiplexer); break;
+                case 'x': ok = ok && pbuf_printf(buf, "%u", measurements[index].multiplexer); break;
                 case 'c': ok = ok && pbuf_printf(buf, "%u", measurements[index].channel); break;
-                case 'A': ok = ok && pbuf_printf(buf, "%016llX", measurements[index].address); break;
-                case 'P': ok = ok && pbuf_printf(buf, "%s", parts[measurements[index].part].label); break;
-                case 'p': ok = ok && pbuf_printf(buf, "%u", measurements[index].parameter); break;
-                case 'M': ok = ok && pbuf_printf(buf, "%s", metric_labels[measurements[index].metric]); break;
-                case 'U': ok = ok && pbuf_printf(buf, "%s", unit_labels[measurements[index].unit]); break;
+                case 'a': ok = ok && pbuf_printf(buf, "%016llX", measurements[index].address); break;
+                case 'p': ok = ok && pbuf_printf(buf, "%s", parts[measurements[index].part].label); break;
+                case 'P': ok = ok && pbuf_printf(buf, "%s", measurements[index].part ? parts[measurements[index].part].label : "none"); break;
+                case 'e': ok = ok && pbuf_printf(buf, "%u", measurements[index].parameter); break;
+                case 'm': ok = ok && pbuf_printf(buf, "%s", metric_labels[measurements[index].metric]); break;
+                case 'M': ok = ok && pbuf_printf(buf, "%s", measurements[index].metric ? metric_labels[measurements[index].metric] : "none"); break;
+                case 'u': ok = ok && pbuf_printf(buf, "%s", unit_labels[measurements[index].unit]); break;
+                case 'U': ok = ok && pbuf_printf(buf, "%s", measurements[index].unit ? unit_labels[measurements[index].unit] : "none"); break;
                 case 'v': ok = ok && pbuf_printf(buf, "%f", measurements[index].value); break;
                 case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) measurements[index].time); break;
-                default:  ok = ok && pbuf_printf(buf, "%%_");
+                case '_': ok = ok && pbuf_printf(buf, "\n"); break;
+                case '<': ok = ok && pbuf_printf(buf, "\r"); break;
+                case '>': ok = ok && pbuf_printf(buf, "\t"); break;
+                default:  ok = ok && pbuf_printf(buf, "@%c", template_row[j + 1]);
             }
             j += 1;
         }

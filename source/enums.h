@@ -111,7 +111,8 @@ extern const char *part_labels[];
 typedef enum part part_enum_t;
 
 enum metric {
-	METRIC_Temperature = 0,
+	METRIC_NONE = 0,
+	METRIC_Temperature,
 	METRIC_Humidity,
 	METRIC_Pressure,
 	METRIC_CO2,

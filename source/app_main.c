@@ -178,6 +178,43 @@ esp_err_t http_event_handler(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
+size_t encode_measurements(uint8_t backend_index)
+{
+    bool ok = true;
+    size_t backend_buffer_length = sizeof(backend_buffer);
+
+    switch(backends[backend_index].format) {
+        case BACKEND_FORMAT_SENML:
+            ok = ok && measurements_to_senml(backend_buffer, &backend_buffer_length);
+            break;
+        case BACKEND_FORMAT_POSTMAN:
+            ok = ok && measurements_to_postman(backend_buffer, &backend_buffer_length,
+                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].user : NULL,
+                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].key : NULL);
+            break;
+        case BACKEND_FORMAT_TEMPLATE:
+            ok = ok && measurements_to_template(backend_buffer, &backend_buffer_length,
+                backends[backend_index].template_header, backends[backend_index].template_row,
+                backends[backend_index].template_row_separator, backends[backend_index].template_name_separator,
+                backends[backend_index].template_footer);
+            break;
+        default:
+            ok = false;
+    }
+
+    ESP_LOGI(__func__, "backend buffer length / size: %u / %u", backend_buffer_length, sizeof(backend_buffer));
+
+    if(!ok && !backend_buffer_length)
+        ESP_LOGE(__func__, "backend buffer overflow!");
+
+    if(!ok) {
+        backends[backend_index].status = BACKEND_STATUS_ERROR;
+        backends[backend_index].error = 0x201; // Serialization failed
+        backends[backend_index].message[0] = 0;
+        backend_buffer_length = 0;
+    }
+    return backend_buffer_length;
+}
 
 void app_main(void)
 {
@@ -262,7 +299,8 @@ void app_main(void)
         }
 
         now = esp_timer_get_time();
-        if(now >= application.next_measurement_time) {
+        if(now >= application.next_measurement_time || backends_modified) {
+            backends_modified = false;
             ESP_LOGI(__func__, "starting measurements @ %lli", now);
             application.last_measurement_time = now;
             application.next_measurement_time += application.sampling_period * 1000000L;
@@ -285,46 +323,11 @@ void app_main(void)
             if(application.diagnostics)
                 wifi_measure();
 
-            for(int i = 0; i != BACKENDS_NUM_MAX; i++) {
+            for(uint8_t i = 0; i != BACKENDS_NUM_MAX; i++) {
                 if(backends[i].uri[0] == 0)
                     continue;
 
-                bool ok = true;
-                size_t backend_buffer_length = sizeof(backend_buffer);
-
-                if(backends[i].uri[0] == 'h' || backends[i].uri[0] == 'm') {
-                    ESP_LOGI(__func__, "started encoding measurements @ %lli", esp_timer_get_time());
-                    switch(backends[i].format) {
-                        case BACKEND_FORMAT_SENML:
-                            ok = ok && measurements_to_senml(backend_buffer, &backend_buffer_length);
-                            break;
-                        case BACKEND_FORMAT_POSTMAN:
-                            ok = ok && measurements_to_postman(backend_buffer, &backend_buffer_length,
-                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].user : NULL,
-                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].key : NULL);
-                            break;
-                        case BACKEND_FORMAT_TEMPLATE:
-                            ok = ok && measurements_to_template(backend_buffer, &backend_buffer_length,
-                                backends[i].template_header, backends[i].template_row, backends[i].template_row_separator,
-                                backends[i].template_name_separator, backends[i].template_footer);
-                            break;
-                        default:
-                            ok = false;
-                    }
-
-                    ESP_LOGI(__func__, "backend buffer length / size: %u / %u", backend_buffer_length, sizeof(backend_buffer));
-                    if(!ok && !backend_buffer_length)
-                        ESP_LOGE(__func__, "backend buffer overflow!");
-
-                    if(!ok) {
-                        backends[i].status = BACKEND_STATUS_ERROR;
-                        backends[i].error = 0x201; // Serialization failed
-                        backends[i].message[0] = 0;
-                        continue;
-                    }
-                }
                 ESP_LOGI(__func__, "started sending measurements @ %lli", esp_timer_get_time());
-
                 switch(backends[i].uri[0]) {
                 case 'h': {     // http / https
                     esp_http_client_config_t config_post = {
@@ -381,6 +384,10 @@ void app_main(void)
                                 esp_http_client_set_header(client, "Content-Type", "text/plain; charset=utf-8"); break;
                         }
                     }
+
+                    size_t backend_buffer_length = encode_measurements(i);
+                    if(!backend_buffer_length)
+                        continue;
                     esp_http_client_set_post_field(client, backend_buffer, backend_buffer_length);
 
                     err = esp_http_client_perform(client);
@@ -412,7 +419,8 @@ void app_main(void)
                     break;
                 }
                 case 'm':   // mqtt / mqtts
-                    if(backends_started) {
+                    size_t backend_buffer_length;
+                    if(backends_started && (backend_buffer_length = encode_measurements(i)) != 0) {
                         err = esp_mqtt_client_publish(backends[i].handle, backends[i].output_topic, backend_buffer, backend_buffer_length, 0, 0);
                         backends[i].status = err < 0 ? BACKEND_STATUS_ERROR : BACKEND_STATUS_ONLINE;
                         backends[i].error = err;
@@ -468,7 +476,7 @@ void app_main(void)
                         break;
                     }
 
-                    for(int n = 0; n < count && ok; n++) {
+                    for(int n = 0; n < count; n++) {
                         pbuf_t buf = { backend_buffer, sizeof(backend_buffer), 0 };
                         index = measurements_full ? (measurements_count + n) % MEASUREMENTS_NUM_MAX : n;
 
