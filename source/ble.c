@@ -29,18 +29,40 @@ bool ble_init()
     ble.error = ESP_OK;
     ble.minimum_rssi = -100;
     ble.scan_duration = 45;
+    ble.running = false;
 
     ble_read_from_nvs();
+    return ble.enabled ? ble_start() : true;
+}
 
-    if(ble.enabled) {
-        if((ble.error = nimble_port_init()) != ESP_OK) {
-            ESP_LOGE(__func__, "Failed to init nimble %d ", ble.error);
-            return false;
-        }
-        nimble_port_freertos_init(ble_host_task);
+bool ble_start()
+{
+    if(!ble.running) {
+        ble.running = (ble.error = nimble_port_init()) == ESP_OK;
+        if(ble.running)
+            nimble_port_freertos_init(ble_host_task);
+        else
+            ESP_LOGE(__func__, "Failed to start nimble %d ", ble.error);
     }
+    return ble.running;
+}
 
-    return true;
+bool ble_stop()
+{
+    if(ble.running) {
+        if((ble.error = nimble_port_stop()) == ESP_OK)
+            nimble_port_deinit();
+        else
+            ESP_LOGE(__func__, "Failed to stop nimble %d ", ble.error);
+        ble.running = ble.error != ESP_OK;
+    }
+    return !ble.running;
+}
+
+void ble_host_task(void *param)
+{
+    nimble_port_run();              // This function will return only when nimble_port_stop() is executed
+    nimble_port_freertos_deinit();
 }
 
 bool ble_read_from_nvs()
@@ -113,6 +135,8 @@ uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
             }
             bp_close(reader);
             ok = ok && ble_write_to_nvs();
+            ok = ok && (ble.enabled && !ble.running ? ble_start() : true);
+            ok = ok && (!ble.enabled && ble.running ? ble_stop() : true);
             response = ok ? PM_204_Changed : PM_500_Internal_Server_Error;
         }
     }
@@ -235,14 +259,6 @@ int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
 
     return 0;
 }
-
-void ble_host_task(void *param)
-{
-    ESP_LOGI(__func__, "BLE Host Task Started");
-    nimble_port_run();              // This function will return only when nimble_port_stop() is executed
-    nimble_port_freertos_deinit();
-}
-
 
 bool ble_start_scan()
 {

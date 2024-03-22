@@ -4,19 +4,19 @@
 #include <time.h>
 #include <esp_log.h>
 
-#include "postman.h"
+#include "bigpostman.h"
 
-void postman_init(postman_t *postman)
+void bigpostman_init(bigpostman_t *bigpostman)
 {
-    postman->registered_resources = 0;
+    bigpostman->registered_resources = 0;
 }
 
-bool postman_register_resource(postman_t *postman, const char *path, handler_t handler)
+bool bigpostman_register_resource(bigpostman_t *bigpostman, const char *path, handler_t handler)
 {
-    if(postman->registered_resources < PM_MAX_RESOURCES) {
-        postman->resources[postman->registered_resources].path = path;
-        postman->resources[postman->registered_resources].handler = handler;
-        postman->registered_resources += 1;
+    if(bigpostman->registered_resources < PM_MAX_RESOURCES) {
+        bigpostman->resources[bigpostman->registered_resources].path = path;
+        bigpostman->resources[bigpostman->registered_resources].handler = handler;
+        bigpostman->registered_resources += 1;
         return true;
     }
     else
@@ -25,7 +25,7 @@ bool postman_register_resource(postman_t *postman, const char *path, handler_t h
 
 // 👻
 
-bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t length, bp_length_t max_length, time_t now, char *id, hmac_sha256_key_t key)
+bp_length_t bigpostman_handle_pack(bigpostman_t *pm, bp_type_t *buffer, bp_length_t length, bp_length_t max_length, time_t now, char *id, hmac_sha256_key_t key)
 {
     time_t timestamp;
     uint32_t method_token = 0;
@@ -101,7 +101,7 @@ bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t le
         bp_put_integer(&pm->writer, (response_code << 24) | (method_token & 0x00FFFFFF));
         bp_restore_cursor(&pm->writer);
 
-        if(key && signature_verified && !postman_put_signature(pm, now, id, key))
+        if(key && signature_verified && !bigpostman_put_signature(pm, now, id, key))
             response_code = PM_500_Internal_Server_Error;
     }
 
@@ -113,7 +113,7 @@ bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t le
     return bp_get_offset(&pm->writer);
 }
 
-bool postman_put_signature(postman_t *pm, time_t now, char *id, hmac_sha256_key_t key)
+bool bigpostman_put_signature(bigpostman_t *pm, time_t now, char *id, hmac_sha256_key_t key)
 {
     bool ok = true;
     hmac_sha256_hash_t hash;

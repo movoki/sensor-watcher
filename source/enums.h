@@ -65,7 +65,7 @@ enum backend_auth {
 	BACKEND_AUTH_TOKEN,
 	BACKEND_AUTH_HEADER,
 	BACKEND_AUTH_X509,
-	BACKEND_AUTH_POSTMAN,
+	BACKEND_AUTH_BIGPOSTMAN,
 	BACKEND_AUTH_NUM_MAX
 };
 extern const char *backend_auth_labels[];
@@ -73,7 +73,7 @@ typedef enum backend_auth backend_auth_t;
 
 enum backend_format {
 	BACKEND_FORMAT_SENML = 0,
-	BACKEND_FORMAT_POSTMAN,
+	BACKEND_FORMAT_BIGPOSTMAN,
 	BACKEND_FORMAT_TEMPLATE,
 	BACKEND_FORMAT_BINARY,
 	BACKEND_FORMAT_NUM_MAX
@@ -128,6 +128,7 @@ enum metric {
 	METRIC_LightIntensity,
 	METRIC_UpTime,
 	METRIC_FreeHeap,
+	METRIC_MinimumFreeHeap,
 	METRIC_AccelerationX,
 	METRIC_AccelerationY,
 	METRIC_AccelerationZ,

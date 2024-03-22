@@ -10,6 +10,7 @@ typedef struct {
     esp_err_t      error;
     device_rssi_t  minimum_rssi;
     uint8_t        scan_duration;    // seconds
+    bool           running;
     bool           enabled;
 } ble_t;
 
@@ -29,6 +30,8 @@ extern ble_measurement_t ble_measurements[];
 extern uint32_t ble_measurements_count;
 
 bool ble_init();
+bool ble_start();
+bool ble_stop();
 bool ble_read_from_nvs();
 bool ble_write_to_nvs();
 bool ble_start_scan();

@@ -91,6 +91,8 @@ uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pac
         ok = ok && bp_put_integer(writer, APP_VERSION);
         ok = ok && bp_put_string(writer, "free_heap");
         ok = ok && bp_put_integer(writer, esp_get_free_heap_size());
+        ok = ok && bp_put_string(writer, "minimum_free_heap");
+        ok = ok && bp_put_integer(writer, esp_get_minimum_free_heap_size());
         ok = ok && bp_put_string(writer, "time");
         ok = ok && bp_put_big_integer(writer, NOW);
         ok = ok && bp_put_string(writer, "up_time");
@@ -141,6 +143,6 @@ uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pac
 void application_measure()
 {
     measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_UpTime, NOW, UNIT_s, esp_timer_get_time() / 1000000L);
-    measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_FreeHeap, NOW, UNIT_B, esp_get_free_heap_size());
+    measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_MinimumFreeHeap, NOW, UNIT_B, esp_get_minimum_free_heap_size());
 }
 

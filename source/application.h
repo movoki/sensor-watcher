@@ -6,7 +6,7 @@
 
 #define APP_ID         "com.movoki.sensor_watcher"
 #define APP_NAME       "SensorWatcher"
-#define APP_VERSION    0x0003
+#define APP_VERSION    0x0004
 
 #include "bigpacks.h"
 

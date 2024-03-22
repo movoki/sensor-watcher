@@ -28,7 +28,7 @@
 #include "yuarel.h"
 
 #include "framer.h"
-#include "postman.h"
+#include "bigpostman.h"
 
 #include "adc.h"
 #include "application.h"
@@ -48,16 +48,16 @@
 #define WIFI_CONNECT_DELAY  10 // seconds
 #define SNTP_SYNC_DELAY     30 // seconds
 
-#define POSTMAN_PACKET_LENGTH_MAX   (9 * 1024)          // 9KB, to fit a full packed backend_t plus headers
-#define UART_BUFFER_SIZE    POSTMAN_PACKET_LENGTH_MAX   // To contain a full 'put backends/x' and avoid byte losses when busy HTTPing
+#define BIGPOSTMAN_PACKET_LENGTH_MAX   (9 * 1024)          // 9KB, to fit a full packed backend_t plus headers
+#define UART_BUFFER_SIZE    BIGPOSTMAN_PACKET_LENGTH_MAX   // To contain a full 'put backends/x' and avoid byte losses when busy HTTPing
 #define UART_NUMBER         UART_NUM_0
 
 framer_t framer;
-postman_t postman;
+bigpostman_t bigpostman;
 
 size_t http_response_length = 0;
-alignas(4) uint8_t http_response_buffer[POSTMAN_PACKET_LENGTH_MAX];
-uint32_t postman_buffer[POSTMAN_PACKET_LENGTH_MAX / 4];
+alignas(4) uint8_t http_response_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX];
+uint32_t bigpostman_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX / 4];
 char backend_buffer[9 * 1024];      // 9 KB, enough for 64 measurements coded as Postman
 
 
@@ -147,7 +147,7 @@ void serial_send_receive()
     serial_flush();
     while(framer.state == FRAMER_RECEIVING && serial_read_bytes(&byte, 1)) {
         if(framer_put_received_byte(&framer, byte) && framer.length) {
-            framer.length = postman_handle_pack(&postman, postman_buffer, framer.length / 4, sizeof(postman_buffer) / 4, 0, NULL, NULL) * 4;
+            framer.length = bigpostman_handle_pack(&bigpostman, bigpostman_buffer, framer.length / 4, sizeof(bigpostman_buffer) / 4, 0, NULL, NULL) * 4;
             framer_set_state(&framer, FRAMER_SENDING);
             break;
         }
@@ -187,10 +187,10 @@ size_t encode_measurements(uint8_t backend_index)
         case BACKEND_FORMAT_SENML:
             ok = ok && measurements_to_senml(backend_buffer, &backend_buffer_length);
             break;
-        case BACKEND_FORMAT_POSTMAN:
-            ok = ok && measurements_to_postman(backend_buffer, &backend_buffer_length,
-                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].user : NULL,
-                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].key : NULL);
+        case BACKEND_FORMAT_BIGPOSTMAN:
+            ok = ok && measurements_to_bigpostman(backend_buffer, &backend_buffer_length,
+                backends[backend_index].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[backend_index].user : NULL,
+                backends[backend_index].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[backend_index].key : NULL);
             break;
         case BACKEND_FORMAT_TEMPLATE:
             ok = ok && measurements_to_template(backend_buffer, &backend_buffer_length,
@@ -245,20 +245,20 @@ void app_main(void)
         ESP_LOGI(__func__, "devices_init ended @ %lli", esp_timer_get_time());
     }
 
-    framer_set_buffer(&framer, (uint8_t *)postman_buffer, sizeof(postman_buffer));
-    postman_init(&postman);
-    postman_register_resource(&postman, "adc", &adc_resource_handler);
-    postman_register_resource(&postman, "application", &application_resource_handler);
-    postman_register_resource(&postman, "ble", &ble_resource_handler);
-    postman_register_resource(&postman, "board", &board_resource_handler);
-    postman_register_resource(&postman, "backends", &backends_resource_handler);
-    postman_register_resource(&postman, "devices", &devices_resource_handler);
-    postman_register_resource(&postman, "enums", &enums_resource_handler);
-    postman_register_resource(&postman, "i2c", &i2c_resource_handler);
-    postman_register_resource(&postman, "logs", &logs_resource_handler);
-    postman_register_resource(&postman, "measurements", &measurements_resource_handler);
-    postman_register_resource(&postman, "onewire", &onewire_resource_handler);
-    postman_register_resource(&postman, "wifi", &wifi_resource_handler);
+    framer_set_buffer(&framer, (uint8_t *)bigpostman_buffer, sizeof(bigpostman_buffer));
+    bigpostman_init(&bigpostman);
+    bigpostman_register_resource(&bigpostman, "adc", &adc_resource_handler);
+    bigpostman_register_resource(&bigpostman, "application", &application_resource_handler);
+    bigpostman_register_resource(&bigpostman, "ble", &ble_resource_handler);
+    bigpostman_register_resource(&bigpostman, "board", &board_resource_handler);
+    bigpostman_register_resource(&bigpostman, "backends", &backends_resource_handler);
+    bigpostman_register_resource(&bigpostman, "devices", &devices_resource_handler);
+    bigpostman_register_resource(&bigpostman, "enums", &enums_resource_handler);
+    bigpostman_register_resource(&bigpostman, "i2c", &i2c_resource_handler);
+    bigpostman_register_resource(&bigpostman, "logs", &logs_resource_handler);
+    bigpostman_register_resource(&bigpostman, "measurements", &measurements_resource_handler);
+    bigpostman_register_resource(&bigpostman, "onewire", &onewire_resource_handler);
+    bigpostman_register_resource(&bigpostman, "wifi", &wifi_resource_handler);
 
     application.next_measurement_time += (ble.enabled ? ble.scan_duration * 1000000 : 0);
 
@@ -267,8 +267,7 @@ void app_main(void)
 
     ESP_LOGI(__func__, "sizeof devices: %u", sizeof(device_t) * DEVICES_NUM_MAX);
     ESP_LOGI(__func__, "sizeof measurements: %u", sizeof(measurement_t) * MEASUREMENTS_NUM_MAX);
-    ESP_LOGI(__func__, "sizeof i2c_buses: %u", sizeof(i2c_bus_t) * I2C_BUSES_NUM_MAX);
-    ESP_LOGI(__func__, "sizeof onewire_buses: %u", sizeof(onewire_bus_t) * ONEWIRE_BUSES_NUM_MAX);
+    ESP_LOGI(__func__, "sizeof backends: %u", sizeof(backend_t) * BACKENDS_NUM_MAX);
 
     while(true) {
         serial_send_receive();
@@ -378,8 +377,8 @@ void app_main(void)
                         switch(backends[i].format) {
                             case BACKEND_FORMAT_SENML:
                                 esp_http_client_set_header(client, "Content-Type", "application/json"); break;
-                            case BACKEND_FORMAT_POSTMAN:
-                                esp_http_client_set_header(client, "Content-Type", "application/vnd.postman"); break;
+                            case BACKEND_FORMAT_BIGPOSTMAN:
+                                esp_http_client_set_header(client, "Content-Type", "application/vnd.bigpostman"); break;
                             case BACKEND_FORMAT_TEMPLATE:
                                 esp_http_client_set_header(client, "Content-Type", "text/plain; charset=utf-8"); break;
                         }
@@ -398,10 +397,10 @@ void app_main(void)
                         strlcpy(backends[i].message, (char *)http_response_buffer, sizeof(backends[i].message));
                         if(status >= 300)
                             ESP_LOGI(__func__, "HTTP Error %i: %s", status, http_response_buffer);
-                        else if(http_response_length && backends[i].format == BACKEND_FORMAT_POSTMAN && backends[i].auth == BACKEND_AUTH_POSTMAN) {
+                        else if(http_response_length && backends[i].format == BACKEND_FORMAT_BIGPOSTMAN && backends[i].auth == BACKEND_AUTH_BIGPOSTMAN) {
                             hmac_sha256_key_t binary_key;
                             if(hmac_hex_decode(binary_key, sizeof(binary_key), backends[i].key, strlen(backends[i].key)) == sizeof(binary_key))
-                                postman_handle_pack(&postman,
+                                bigpostman_handle_pack(&bigpostman,
                                     (bp_type_t *) http_response_buffer,
                                     http_response_length / sizeof(bp_type_t),
                                     sizeof(http_response_buffer) / sizeof(bp_type_t),
@@ -484,11 +483,11 @@ void app_main(void)
                         case BACKEND_FORMAT_SENML:
                             measurements_entry_to_senml_row(index, &buf);
                             break;
-                        case BACKEND_FORMAT_POSTMAN:
+                        case BACKEND_FORMAT_BIGPOSTMAN:
                             buf.length = buf.size;
-                            measurements_entry_to_postman(index, buf.data, &buf.length,
-                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].user : NULL,
-                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].key : NULL);
+                            measurements_entry_to_bigpostman(index, buf.data, &buf.length,
+                                backends[i].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[i].user : NULL,
+                                backends[i].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[i].key : NULL);
                             break;
                         case BACKEND_FORMAT_TEMPLATE:
                             measurements_entry_to_template_row(index, &buf, backends[i].template_row, backends[i].template_name_separator);
@@ -534,6 +533,7 @@ void app_main(void)
             if(sleep_duration > 0) {
                 slept_once = true;
                 wifi_stop();
+                ble_stop();
                 i2c_set_power(false);
                 onewire_set_power(false);
                 esp_sleep_enable_timer_wakeup(sleep_duration);

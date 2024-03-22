@@ -144,7 +144,7 @@ bool measurements_put_signature(bp_pack_t *bp, char *id, char *key)
     return ok;
 }
 
-bool measurements_entry_to_postman(measurements_index_t index, char *buffer, size_t *buffer_size, char *id, char *key)
+bool measurements_entry_to_bigpostman(measurements_index_t index, char *buffer, size_t *buffer_size, char *id, char *key)
 {
     bool ok = true;
     char name[MEASUREMENTS_NAME_LENGTH];
@@ -174,7 +174,7 @@ bool measurements_entry_to_postman(measurements_index_t index, char *buffer, siz
     return ok;
 }
 
-bool measurements_to_postman(char *buffer, size_t *buffer_size, char *id, char *key)
+bool measurements_to_bigpostman(char *buffer, size_t *buffer_size, char *id, char *key)
 {
     bp_pack_t bp;
     bool ok = true;

@@ -84,7 +84,7 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 
 - Download and install ESP-IDF 5.2 https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/linux-macos-setup.html
 - Go to the esp32 or esp32s3 folder in this project, depending on what device you have, and run 'idf.py flash'.
-- Then go to the tools folder in this project and use postman-cli.py to configure the firmware.
+- Then go to the tools folder in this project and use bigpostman-cli.py to configure the firmware.
 
 
 # License

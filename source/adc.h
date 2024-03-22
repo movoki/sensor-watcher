@@ -5,7 +5,7 @@
 #define adc_h
 
 #include "enums.h"
-#include "postman.h"
+#include "bigpostman.h"
 
 #define ADC_CHANNELS_NUM_MAX 10
 

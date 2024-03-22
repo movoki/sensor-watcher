@@ -4,7 +4,7 @@
 #ifndef board_h
 #define board_h
 
-#include "postman.h"
+#include "bigpostman.h"
 
 typedef struct {
 	uint32_t model;

@@ -3,7 +3,7 @@
 
 #include "devices.h"
 #include "enums.h"
-#include "postman.h"
+#include "bigpostman.h"
 
 const char *board_model_labels[] = {
 	[BOARD_MODEL_NONE]	 					"",
@@ -53,12 +53,12 @@ const char *backend_auth_labels[] = {
 	[BACKEND_AUTH_TOKEN]	"token",
 	[BACKEND_AUTH_HEADER]	"header",
 	[BACKEND_AUTH_X509]		"x509",
-	[BACKEND_AUTH_POSTMAN]	"postman",
+	[BACKEND_AUTH_BIGPOSTMAN]	"bigpostman",
 };
 
 const char *backend_format_labels[] = {
 	[BACKEND_FORMAT_SENML]		"senml",
-	[BACKEND_FORMAT_POSTMAN]	"postman",
+	[BACKEND_FORMAT_BIGPOSTMAN]	"bigpostman",
 	[BACKEND_FORMAT_TEMPLATE]	"template",
 	[BACKEND_FORMAT_BINARY]		"binary",
 };
@@ -81,6 +81,7 @@ const char *metric_labels[] = {
 	[METRIC_LightIntensity]			"LightIntensity",
 	[METRIC_UpTime]					"UpTime",
 	[METRIC_FreeHeap]				"FreeHeap",
+	[METRIC_MinimumFreeHeap]		"MinimumFreeHeap",
 	[METRIC_AccelerationX]			"AccelerationX",
 	[METRIC_AccelerationY]			"AccelerationY",
 	[METRIC_AccelerationZ]			"AccelerationZ",

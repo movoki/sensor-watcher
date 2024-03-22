@@ -9,7 +9,7 @@
 #include "onewire_bus.h"
 
 #include "enums.h"
-#include "postman.h"
+#include "bigpostman.h"
 
 typedef struct {
 	uint8_t 	data_pin;

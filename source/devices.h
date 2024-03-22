@@ -5,7 +5,7 @@
 #define devices_h
 
 #include "enums.h"
-#include "postman.h"
+#include "bigpostman.h"
 
 #define DEVICES_NUM_MAX 			64
 #define DEVICES_PARAMETERS_NUM_MAX	9		// For RuuviTags

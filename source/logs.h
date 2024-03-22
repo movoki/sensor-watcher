@@ -4,7 +4,7 @@
 #ifndef logs_h
 #define logs_h
 
-#include "postman.h"
+#include "bigpostman.h"
 
 #define LOG_MAX_ROWS    64
 #define LOG_MAX_COLUMNS 90
