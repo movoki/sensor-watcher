@@ -1,3 +1,5 @@
+![SensorWatcher Logo](logo.png?raw=True)
+
 # About
 
 SensorWatcher is a firmware for the ESP32 family of microcontrollers that automatically detects I2C, 1-Wire, or BLE sensors and uploads the sensor measurements to backends using HTTP, MQTT, or UDP.
