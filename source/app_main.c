@@ -37,6 +37,7 @@
 #include "backends.h"
 #include "devices.h"
 #include "enums.h"
+#include "httpdate.h"
 #include "i2c.h"
 #include "logs.h"
 #include "measurements.h"
@@ -55,6 +56,7 @@
 framer_t framer;
 bigpostman_t bigpostman;
 
+time_t http_timestamp = 0;
 size_t http_response_length = 0;
 alignas(4) uint8_t http_response_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX];
 uint32_t bigpostman_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX / 4];
@@ -163,6 +165,10 @@ esp_err_t http_event_handler(esp_http_client_event_t *event)
              http_response_length = 0;
              http_response_buffer[0] = 0;
              break;
+        case HTTP_EVENT_ON_HEADER:
+            if(!strncmp(event->header_key, "Date", 5))
+                httpdate_parse(event->header_value, &http_timestamp);
+            break;
         case HTTP_EVENT_ON_DATA:
             if (!esp_http_client_is_chunked_response(event->client)) {
                 size_t copy_len = MIN(event->data_len, (sizeof(http_response_buffer) - 1 - http_response_length));
@@ -273,10 +279,10 @@ void app_main(void)
         serial_send_receive();
 
         if(!sntp_started && wifi.status == WIFI_STATUS_ONLINE && !application.sleep) {
-            sntp_started = true;
             esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
             esp_sntp_setservername(0, "pool.ntp.org");
             esp_sntp_init();
+            sntp_started = true;
         }
 
         if(wifi.disconnected) {
@@ -331,7 +337,6 @@ void app_main(void)
                 case 'h': {     // http / https
                     esp_http_client_config_t config_post = {
                         .url = backends[i].uri,
-                        .method = HTTP_METHOD_POST,
                         .cert_pem = backends[i].server_cert[0] ? backends[i].server_cert : NULL,
                         .crt_bundle_attach = backends[i].server_cert[0] ? NULL : esp_crt_bundle_attach,
                         .is_async = false,
@@ -371,6 +376,25 @@ void app_main(void)
                             break;
                     }
 
+                    if(!NOW && (backends[i].auth == BACKEND_AUTH_BIGPOSTMAN || strstr(backends[i].template_row, "@T"))) {
+                        http_timestamp = 0;
+                        http_response_length = 0;
+                        http_response_buffer[0] = 0;
+                        esp_http_client_set_method(client, HTTP_METHOD_HEAD);
+                        err = esp_http_client_perform(client);
+                        if(err == ESP_OK) {
+                            struct timeval now = { .tv_sec = http_timestamp };
+                            settimeofday(&now, NULL);
+                            ESP_LOGI(__func__, "System time set to HTTP Date: %lli", http_timestamp);
+                        }
+                        else {
+                            backends[i].status = BACKEND_STATUS_ERROR;
+                            backends[i].error = err;
+                            backends[i].message[0] = 0;
+                            continue;
+                        }
+                    }
+
                     if(backends[i].content_type[0])
                         esp_http_client_set_header(client, "Content-Type", backends[i].content_type);
                     else {
@@ -387,6 +411,10 @@ void app_main(void)
                     size_t backend_buffer_length = encode_measurements(i);
                     if(!backend_buffer_length)
                         continue;
+
+                    http_response_length = 0;
+                    http_response_buffer[0] = 0;
+                    esp_http_client_set_method(client, HTTP_METHOD_POST);
                     esp_http_client_set_post_field(client, backend_buffer, backend_buffer_length);
 
                     err = esp_http_client_perform(client);
@@ -525,7 +553,7 @@ void app_main(void)
         }
 
         now = esp_timer_get_time();
-        if(application.sleep &&
+        if(application.sleep && framer.state != FRAMER_SENDING &&
           (ready_to_sleep || (measurements_updated && now - application.last_measurement_time > 10 * 1000000)) &&
           (slept_once || now > 60 * 1000000)) {
             ready_to_sleep = false;

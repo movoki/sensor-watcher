@@ -246,6 +246,7 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
                 case 'U': ok = ok && pbuf_printf(buf, "%s", measurements[index].unit ? unit_labels[measurements[index].unit] : "none"); break;
                 case 'v': ok = ok && pbuf_printf(buf, "%f", measurements[index].value); break;
                 case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) measurements[index].time); break;
+                case 'T': ok = ok && pbuf_printf(buf, "%lli", (int64_t) (measurements[index].time ? measurements[index].time : NOW)); break;
                 case '_': ok = ok && pbuf_printf(buf, "\n"); break;
                 case '<': ok = ok && pbuf_printf(buf, "\r"); break;
                 case '>': ok = ok && pbuf_printf(buf, "\t"); break;

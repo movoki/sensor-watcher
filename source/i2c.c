@@ -547,12 +547,12 @@ bool i2c_detect_sht3x(device_bus_t bus, device_address_t address)
     uint8_t reset_cmd[] = { 0x30, 0xA2 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, reset_cmd, sizeof(reset_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t status_cmd[] = { 0xF3, 0x2D };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, status_cmd, sizeof(status_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[2];
     if(i2c_master_read_from_device(i2c_buses[bus].port, address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -567,7 +567,7 @@ bool i2c_measure_sht3x(devices_index_t device)
     uint8_t measure_cmd[] = { 0x24, 0x00 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_cmd, sizeof(measure_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[6];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -590,12 +590,12 @@ bool i2c_detect_sht4x(device_bus_t bus, device_address_t address)
     uint8_t reset_cmd[] = { 0x94 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, reset_cmd, sizeof(reset_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t serial_cmd[] = { 0x89 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, serial_cmd, sizeof(serial_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[6];
     if(i2c_master_read_from_device(i2c_buses[bus].port, address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -611,7 +611,7 @@ bool i2c_measure_sht4x(devices_index_t device)
     uint8_t measure_cmd[] = { 0xFD };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_cmd, sizeof(measure_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[6];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -659,7 +659,7 @@ bool i2c_measure_htu21d(devices_index_t device)
     uint8_t measure_t_cmd[] = { 0xF3 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_t_cmd, sizeof(measure_t_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (70 / portTICK_PERIOD_MS);
+    vTaskDelay(70 / portTICK_PERIOD_MS);
 
     uint8_t t_data[3];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, t_data, sizeof(t_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -670,7 +670,7 @@ bool i2c_measure_htu21d(devices_index_t device)
     uint8_t measure_h_cmd[] = { 0xF5 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_h_cmd, sizeof(measure_h_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t h_data[3];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, h_data, sizeof(h_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -701,7 +701,7 @@ bool i2c_measure_htu31d(devices_index_t device)
     uint8_t measure_cmd[] = { 0x5E };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_cmd, sizeof(measure_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t read_th_cmd[] = { 0x00 };
     uint8_t th_data[6];
@@ -793,7 +793,7 @@ bool i2c_measure_lps2x3x(devices_index_t device)
     uint8_t one_shot_cmd[] = { 0x11, 0x13 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, one_shot_cmd, sizeof(one_shot_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t pt_cmd[] = { 0x28 };
     uint8_t pt_data[5];
@@ -825,7 +825,7 @@ bool i2c_measure_bmp280(devices_index_t device)
     uint8_t ctrl_meas_cmd[] = { 0xF4, 0x25 };  // t oversampling x 1, p oversampling x 1, forced mode
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, ctrl_meas_cmd, sizeof(ctrl_meas_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t readout_cmd[] = { 0xF7 };
     uint8_t readout_data[6];
@@ -894,7 +894,7 @@ bool i2c_measure_bmp388(devices_index_t device)
     uint8_t pwr_ctrl_cmd[] = { 0x1B, 0x13 };  // launch forced measurement
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, pwr_ctrl_cmd, sizeof(pwr_ctrl_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t readout_cmd[] = { 0x04 };
     uint8_t readout_data[6];
@@ -981,11 +981,11 @@ bool i2c_measure_dps310(devices_index_t device)
     uint8_t temp_sample_cmd[] = { 0x08, 0x02 };  // one shot temperature sample
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, temp_sample_cmd, sizeof(temp_sample_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
     uint8_t press_sample_cmd[] = { 0x08, 0x01 };  // one shot pressure sample
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, press_sample_cmd, sizeof(press_sample_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t read_pt_cmd[] = { 0x00 };
     uint8_t read_pt_data[6];
@@ -1128,7 +1128,7 @@ bool i2c_measure_bh1750(devices_index_t device)
     uint8_t measure_cmd[] = { 0x20 };  // one time, high resolution
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_cmd, sizeof(measure_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (130 / portTICK_PERIOD_MS);
+    vTaskDelay(130 / portTICK_PERIOD_MS);
     uint8_t measure_data[2];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, measure_data, sizeof(measure_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
@@ -1148,7 +1148,7 @@ bool i2c_detect_veml7700(device_bus_t bus, device_address_t address)
 bool i2c_measure_veml7700(devices_index_t device)
 {
     if(NOW < 1000000)
-        vTaskDelay (100 / portTICK_PERIOD_MS);  // await for complete integration after power up or waking up from sleep
+        vTaskDelay(100 / portTICK_PERIOD_MS);  // await for complete integration after power up or waking up from sleep
     uint8_t als_cmd[] = { 0x04 };
     uint8_t als_data[2];
     if(i2c_master_write_read_device(i2c_buses[devices[device].bus].port, devices[device].address, als_cmd, sizeof(als_cmd), als_data, sizeof(als_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1162,7 +1162,7 @@ bool i2c_measure_veml7700(devices_index_t device)
 bool i2c_detect_tsl2591(device_bus_t bus, device_address_t address)
 {
     if(NOW < 1000000)
-        vTaskDelay (100 / portTICK_PERIOD_MS);  // await for complete integration after power up or waking up from sleep
+        vTaskDelay(100 / portTICK_PERIOD_MS);  // await for complete integration after power up or waking up from sleep
     uint8_t id_cmd[] = { 0x12 | 0x80 };
     uint8_t id_data[1];
     if(i2c_master_write_read_device(i2c_buses[bus].port, address, id_cmd, sizeof(id_cmd), id_data, sizeof(id_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1202,17 +1202,17 @@ bool i2c_detect_scd4x(device_bus_t bus, device_address_t address)
     uint8_t stop_periodic_measurement_cmd[] = { 0x3f, 0x86 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, stop_periodic_measurement_cmd, sizeof(stop_periodic_measurement_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (500 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
 
     uint8_t reinit_cmd[] = { 0x36, 0x46 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, reinit_cmd, sizeof(reinit_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (30 / portTICK_PERIOD_MS);
+    vTaskDelay(30 / portTICK_PERIOD_MS);
 
     uint8_t serial_cmd[] = { 0x36, 0x82 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, serial_cmd, sizeof(serial_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[9];
     if(i2c_master_read_from_device(i2c_buses[bus].port, address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1236,7 +1236,7 @@ bool i2c_measure_scd4x(devices_index_t device)
     uint8_t read_measurement_cmd[] = { 0xec, 0x05 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, read_measurement_cmd, sizeof(read_measurement_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (10 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[9];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1261,12 +1261,12 @@ bool i2c_detect_sen5x(device_bus_t bus, device_address_t address)
     uint8_t reset_cmd[] = { 0xD3, 0x04 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, reset_cmd, sizeof(reset_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (100 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
 
     uint8_t product_name_cmd[] = { 0xD0, 0x14 };
     if(i2c_master_write_to_device(i2c_buses[bus].port, address, product_name_cmd, sizeof(product_name_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[9];
     if(i2c_master_read_from_device(i2c_buses[bus].port, address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1289,7 +1289,7 @@ bool i2c_measure_sen5x(devices_index_t device)
     uint8_t product_name_cmd[] = { 0xD0, 0x14 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, product_name_cmd, sizeof(product_name_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t product_name_data[9];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, product_name_data, sizeof(product_name_data), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1300,7 +1300,7 @@ bool i2c_measure_sen5x(devices_index_t device)
     uint8_t read_data_ready_flag_cmd[] = { 0x02, 0x02 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, read_data_ready_flag_cmd, sizeof(read_data_ready_flag_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t flag_buf[3];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, flag_buf, sizeof(flag_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
@@ -1308,12 +1308,12 @@ bool i2c_measure_sen5x(devices_index_t device)
     if (!sensirion_check_crc(flag_buf))
         return false;
     if(!flag_buf[1])
-        vTaskDelay (1000 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     uint8_t read_measurement_cmd[] = { 0x03, 0xC4 };
     if(i2c_master_write_to_device(i2c_buses[devices[device].bus].port, devices[device].address, read_measurement_cmd, sizeof(read_measurement_cmd), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
         return false;
-    vTaskDelay (20 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
 
     uint8_t raw_buf[24];
     if(i2c_master_read_from_device(i2c_buses[devices[device].bus].port, devices[device].address, raw_buf, sizeof(raw_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS))
