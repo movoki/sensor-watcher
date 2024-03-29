@@ -121,7 +121,7 @@ bool measurements_pack(bp_pack_t *bp)
         ok = ok && measurements_build_name(&buf, index, '_');
         ok = ok && bp_create_container(bp, BP_LIST);
             ok = ok && bp_put_string(bp, name);
-            ok = ok && bp_put_big_integer(bp, measurements[index].time);
+            ok = ok && bp_put_big_integer(bp, measurements[index].time ? measurements[index].time : NOW);
             ok = ok && bp_put_string(bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(bp, measurements[index].value);
         ok = ok && bp_finish_container(bp);
@@ -161,7 +161,7 @@ bool measurements_entry_to_bigpostman(measurements_index_t index, char *buffer, 
     ok = ok && bp_create_container(&bp, BP_LIST);
         ok = ok && bp_create_container(&bp, BP_LIST);
             ok = ok && bp_put_string(&bp, name);
-            ok = ok && bp_put_big_integer(&bp, measurements[index].time);
+            ok = ok && bp_put_big_integer(&bp, measurements[index].time ? measurements[index].time : NOW);
             ok = ok && bp_put_string(&bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(&bp, measurements[index].value);
         ok = ok && bp_finish_container(&bp);
@@ -197,7 +197,8 @@ bool measurements_entry_to_senml_row(measurements_index_t index, pbuf_t *buf)
     bool ok = true;
     ok = ok && pbuf_printf(buf,"{\"n\":\"urn:dev:mac:");
     ok = ok && measurements_build_name(buf, index, '_');
-    ok = ok && pbuf_printf(buf,"\",\"u\":\"%s\",\"v\":%f,\"t\":%lli}", unit_labels[measurements[index].unit], measurements[index].value, (int64_t) measurements[index].time);
+    ok = ok && pbuf_printf(buf,"\",\"u\":\"%s\",\"v\":%f,\"t\":%lli}", unit_labels[measurements[index].unit],
+        measurements[index].value, (int64_t) (measurements[index].time ? measurements[index].time : NOW));
     return ok;
 }
 
@@ -245,8 +246,7 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
                 case 'u': ok = ok && pbuf_printf(buf, "%s", unit_labels[measurements[index].unit]); break;
                 case 'U': ok = ok && pbuf_printf(buf, "%s", measurements[index].unit ? unit_labels[measurements[index].unit] : "none"); break;
                 case 'v': ok = ok && pbuf_printf(buf, "%f", measurements[index].value); break;
-                case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) measurements[index].time); break;
-                case 'T': ok = ok && pbuf_printf(buf, "%lli", (int64_t) (measurements[index].time ? measurements[index].time : NOW)); break;
+                case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) (measurements[index].time ? measurements[index].time : NOW)); break;
                 case '_': ok = ok && pbuf_printf(buf, "\n"); break;
                 case '<': ok = ok && pbuf_printf(buf, "\r"); break;
                 case '>': ok = ok && pbuf_printf(buf, "\t"); break;

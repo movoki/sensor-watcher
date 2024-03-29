@@ -231,6 +231,9 @@ void app_main(void)
 
     esp_event_loop_create_default();
 
+    struct timeval zero_time = { .tv_sec = 0 };   // Reset system time to avoid using the unreliable internal RTC
+    settimeofday(&zero_time, NULL);
+
     logs_init();        // order of inits is important!
     serial_init();
     nvs_init();         // 100 ms
@@ -376,7 +379,7 @@ void app_main(void)
                             break;
                     }
 
-                    if(!NOW && (backends[i].auth == BACKEND_AUTH_BIGPOSTMAN || strstr(backends[i].template_row, "@T"))) {
+                    if(!NOW && (backends[i].auth == BACKEND_AUTH_BIGPOSTMAN || strstr(backends[i].template_row, "@t"))) {
                         http_timestamp = 0;
                         http_response_length = 0;
                         http_response_buffer[0] = 0;

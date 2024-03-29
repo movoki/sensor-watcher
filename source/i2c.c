@@ -223,7 +223,6 @@ void i2c_set_power(bool state)
 
 void i2c_set_default()
 {
-    ESP_LOGI("i2c_buses_set_default", "setting default i2c_buses for board model %lu", board.model);
     switch(board.model) {
     case BOARD_MODEL_M5STACK_ATOM_LITE:
     case BOARD_MODEL_M5STACK_ATOM_MATRIX:

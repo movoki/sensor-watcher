@@ -208,42 +208,53 @@ void onewire_set_power(bool state)
 
 void onewire_set_default()
 {
-    ESP_LOGI("onewire_buses_set_default", "setting default 1-Wire buses for board model %s", board_model_labels[board.model]);
     switch(board.model) {
-    case BOARD_MODEL_M5STACK_ATOM_LITE:
-    case BOARD_MODEL_M5STACK_ATOM_MATRIX:
-    case BOARD_MODEL_M5STACK_ATOM_ECHO:
+    case BOARD_MODEL_ADAFRUIT_ESP32_FEATHER_V2: // A0 A1
+    case BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_PICO: // A0 A1
         onewire_buses_count = 1;
-        onewire_buses[0].data_pin = 22;
-        onewire_buses[0].power_pin = 19;
+        onewire_buses[0].data_pin = 26;
+        onewire_buses[0].power_pin = 25;
+        break;
+    case BOARD_MODEL_ADAFRUIT_ESP32_S3_FEATHER: // A0 A1
+    case BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_S3:   // A0 A1
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 18;
+        onewire_buses[0].power_pin = 17;
+        break;
+    case BOARD_MODEL_M5STACK_ATOM_LITE:         // PORT-B on AtomPortABC
+    case BOARD_MODEL_M5STACK_ATOM_MATRIX:       // PORT-B on AtomPortABC
+    case BOARD_MODEL_M5STACK_ATOM_ECHO:         // PORT-B on AtomPortABC
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 33;
+        onewire_buses[0].power_pin = 23;
         break;
     case BOARD_MODEL_M5STACK_ATOM_U:
         onewire_buses_count = 1;
         onewire_buses[0].data_pin = 22;
         onewire_buses[0].power_pin = 21;
         break;
-    case BOARD_MODEL_M5STACK_ATOMS3:
+    case BOARD_MODEL_M5STACK_ATOMS3:            // PORT-B on AtomPortABC
     case BOARD_MODEL_M5STACK_ATOMS3_LITE:
         onewire_buses_count = 1;
-        onewire_buses[0].data_pin = 5;
-        onewire_buses[0].power_pin = 6;
-        break;
-    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3:
-        onewire_buses_count = 1;
-        onewire_buses[0].data_pin = 3;
-        onewire_buses[0].power_pin = 4;
+        onewire_buses[0].data_pin = 8;
+        onewire_buses[0].power_pin = 7;
         break;
     case BOARD_MODEL_M5STACK_M5STICKC:
     case BOARD_MODEL_M5STACK_M5STICKC_PLUS:
-    case BOARD_MODEL_M5STACK_CORE2:
-    case BOARD_MODEL_M5STACK_CORE2_AWS:
-    case BOARD_MODEL_M5STACK_TOUGH:
-    case BOARD_MODEL_M5STACK_M5STATION_BAT:
-    case BOARD_MODEL_M5STACK_M5STATION_485:
-    case BOARD_MODEL_ADAFRUIT_ESP32_FEATHER_V2:
-    case BOARD_MODEL_ADAFRUIT_ESP32_S3_FEATHER:
-    case BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_PICO:
-    case BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_S3:
+    case BOARD_MODEL_M5STACK_CORE2:             // PORT-B
+    case BOARD_MODEL_M5STACK_CORE2_AWS:         // PORT-B
+    case BOARD_MODEL_M5STACK_TOUGH:             // PORT-B
+    case BOARD_MODEL_M5STACK_M5STATION_BAT:     // PORT-B2
+    case BOARD_MODEL_M5STACK_M5STATION_485:     // PORT-B2
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 36;
+        onewire_buses[0].power_pin = 26;
+        break;
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3:  // D0 D1
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 1;
+        onewire_buses[0].power_pin = 2;
+        break;
     case BOARD_MODEL_GENERIC_ESP32:
     default:
         break;
