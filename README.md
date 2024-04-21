@@ -90,7 +90,7 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 
 # Community resources
 
-- ![Telegram group](https://t.me/SensorWatcher).
+- [Telegram group](https://t.me/SensorWatcher).
 
 # License
 
