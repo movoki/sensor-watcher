@@ -258,6 +258,23 @@ int devices_get_or_append(device_t *device)
     return device_index >= 0 ? device_index : devices_append(device);
 }
 
+int devices_update_or_append(device_t *device)
+{
+    int device_index = devices_get(device);
+    if(device_index >= 0) {
+        device_status_t status  = devices[device_index].status;
+        time_t timestamp        = devices[device_index].timestamp;
+        device_rssi_t rssi      = devices[device_index].rssi;
+        memcpy(&devices[device_index], device, sizeof(device_t));
+        devices[device_index].status    = status;
+        devices[device_index].timestamp = timestamp;
+        devices[device_index].rssi      = rssi;
+        return device_index;
+    }
+    else
+        return devices_append(device);
+}
+
 static bool write_get_response_schema(bp_pack_t *writer)
 {
     bool ok = true;
@@ -490,7 +507,7 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         if(!ok || !device.resource || !device.address || !device.part)  /// there are valid zero addresses?
             return PM_400_Bad_Request;
 
-        return devices_append(&device) >= 0 && devices_write_to_nvs() ? PM_201_Created : PM_500_Internal_Server_Error;
+        return devices_update_or_append(&device) >= 0 && devices_write_to_nvs() ? PM_201_Created : PM_500_Internal_Server_Error;
     }
     else if(method == PM_PUT) {
         int index;

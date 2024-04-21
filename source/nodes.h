@@ -29,6 +29,7 @@ bool nodes_write_to_nvs();
 int nodes_get(node_t *node);
 int nodes_append(node_t *node);
 int nodes_get_or_append(node_t *node);
+int nodes_update_or_append(node_t *node);
 
 bool nodes_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t nodes_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);

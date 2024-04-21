@@ -124,6 +124,19 @@ int nodes_get_or_append(node_t *node)
     return node_index >= 0 ? node_index : nodes_append(node);
 }
 
+int nodes_update_or_append(node_t *node)
+{
+    int node_index = nodes_get(node);
+    if(node_index >= 0) {
+        nodes[node_index].address    = node->address;
+        nodes[node_index].persistent = node->persistent;
+        return node_index;
+    }
+    else
+        return nodes_append(node);
+}
+
+
 static bool write_get_response_schema(bp_pack_t *writer)
 {
     bool ok = true;
@@ -287,7 +300,7 @@ uint32_t nodes_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
         if(!node.address)
             return PM_400_Bad_Request;
 
-        return nodes_append(&node) >= 0 && nodes_write_to_nvs() ? PM_201_Created : PM_500_Internal_Server_Error;
+        return nodes_update_or_append(&node) >= 0 && nodes_write_to_nvs() ? PM_201_Created : PM_500_Internal_Server_Error;
     }
     else if(method == PM_PUT) {
         int index;
