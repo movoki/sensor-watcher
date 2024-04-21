@@ -98,6 +98,31 @@ Most of the code is released under the GPL-3 license. Some libraries are under t
 
 # ChangeLog
 
+## 0.7
+
+- New "nodes" resource to track other SensorWatcher nodes sharing measurements.
+
+- Added support for receiving measurements via BLE from other SensorWatcher nodes, so some nodes can act as BLE sensors and others as BLE gateways that collect measurements via BLE and forward them to backends.
+
+- New options for setting the power level of BLE advertisements and to receive BLE advertisements only from persistent devices or nodes.
+
+- Included a draft of an API schema for all resources. The idea is to enable automatic web configurator generation in the not-so-distant future.
+
+- Added support for generic ESP32-S3 boards.
+
+- Diagnostic measurements are now split by resource and can be enabled independently.
+
+- Disabled pins now use None instead of 255.
+
+- Fixed problems with TinyUSB on ESP32-S3 when transferring packets larger than ~4KB.
+
+- Fixed a bug in BigPacks messing with the cursor stack when a response does not fit the buffer.
+
+- Renamed "fixed" in devices to "persistent".
+
+- Devices status is now a string instead of a boolean.
+
+
 ## 0.6
 
 - Replace zero timestamps with NOW before sending for all supported encodings.

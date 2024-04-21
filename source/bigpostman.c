@@ -2,7 +2,6 @@
 // SPDX short identifier: MIT
 
 #include <time.h>
-#include <esp_log.h>
 
 #include "bigpostman.h"
 
@@ -106,6 +105,7 @@ bp_length_t bigpostman_handle_pack(bigpostman_t *pm, bp_type_t *buffer, bp_lengt
     }
 
     if(response_code >= PM_400_Bad_Request) {       // if error, return only response_code and token
+        bp_reset_cursor(&pm->writer);
         bp_set_offset(&pm->writer, 0);
         bp_put_integer(&pm->writer, (response_code << 24) | (method_token & 0x00FFFFFF));
     }

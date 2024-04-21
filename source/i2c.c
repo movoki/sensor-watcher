@@ -11,12 +11,14 @@
 #include <driver/gpio.h>
 
 #include "application.h"
+#include "bigpostman.h"
 #include "board.h"
 #include "devices.h"
 #include "enums.h"
 #include "i2c.h"
 #include "measurements.h"
 #include "now.h"
+#include "schema.h"
 
 i2c_bus_t i2c_buses[I2C_BUSES_NUM_MAX] = {{0}};
 uint8_t i2c_buses_count = 0;
@@ -105,6 +107,67 @@ bool i2c_write_to_nvs()
         return false;
     }
 }
+
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_LIST | SCHEMA_MAXIMUM_ELEMENTS);
+        ok = ok && bp_create_container(writer, BP_LIST);
+            ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+            ok = ok && bp_create_container(writer, BP_MAP);
+
+                ok = ok && bp_put_string(writer, "port");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer, I2C_NUM_MAX - 1);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "sda_pin");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer, GPIO_NUM_MAX - 1);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "scl_pin");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer, GPIO_NUM_MAX - 1);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "speed");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0); ///
+                    ok = ok && bp_put_integer(writer, I2C_BUS_SPEED_MAX);
+                ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_finish_container(writer);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, I2C_NUM_MAX);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool i2c_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
+
 
 uint32_t i2c_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
@@ -319,6 +382,13 @@ void i2c_set_default()
         i2c_buses[0].scl_pin = 22;
         i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
         break;
+    case BOARD_MODEL_GENERIC_ESP32_S3:
+        i2c_buses_count = 1;
+        i2c_buses[0].port = 0;
+        i2c_buses[0].sda_pin = 8;
+        i2c_buses[0].scl_pin = 9;
+        i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+        break;
     default:
         break;  // Do not enable I2C for unknown boards to avoid burning something connected on those pins! (M5Stack Atom Echo 👀)
     }
@@ -376,9 +446,9 @@ void i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, devi
                     .address = parts[part_index].id_start + address_index,
                     .part = part_index,
                     .mask = parts[part_index].mask,
-                    .status = true,
-                    .fixed = false,
-                    .updated = -1,
+                    .status = DEVICE_STATUS_WORKING,
+                    .persistent = false,
+                    .timestamp = -1,
                 };
                 if(i2c_detect_device(device.bus, device.part, device.address)) {
                     int device_index = devices_get_or_append(&device);
@@ -511,7 +581,7 @@ bool i2c_measure_device(devices_index_t device)
     }
 
     if(ok)
-        devices[device].updated = NOW;
+        devices[device].timestamp = NOW;
 
     return ok;
 }

@@ -8,9 +8,11 @@
 #include <esp_crt_bundle.h>
 #include <mqtt_client.h>
 
+#include "bigpostman.h"
 #include "enums.h"
 #include "application.h"
 #include "backends.h"
+#include "schema.h"
 
 backend_t backends[BACKENDS_NUM_MAX];
 bool backends_modified;
@@ -166,6 +168,177 @@ bool backends_write_to_nvs()
     }
 }
 
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_LIST | SCHEMA_INDEX | SCHEMA_READ_ONLY);
+        ok = ok && bp_create_container(writer, BP_LIST);
+            ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_IDENTIFIER);
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+static bool write_item_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "status");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY | SCHEMA_VALUES);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                for(int i = 0; i < BACKEND_STATUS_NUM_MAX; i++)
+                    ok = ok && bp_put_string(writer, backend_status_labels[i]);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "error");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "message");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_MESSAGE_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "service");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_SERVICE_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "uri");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_URI_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "format");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_VALUES);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                for(int i = 0; i < BACKEND_FORMAT_NUM_MAX; i++)
+                    ok = ok && bp_put_string(writer, backend_format_labels[i]);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "auth");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_VALUES);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                for(int i = 0; i < BACKEND_AUTH_NUM_MAX; i++)
+                    ok = ok && bp_put_string(writer, backend_auth_labels[i]);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "user");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_USER_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "key");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_KEY_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "server_cert");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_PEM_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "output_topic");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TOPIC_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "input_topic");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TOPIC_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "client_id");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_CLIENT_ID_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "content_type");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_CONTENT_TYPE_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "template_header");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_HEADER_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "template_row");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_ROW_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "template_row_separator");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_SEPARATOR_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "template_name_separator");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_SEPARATOR_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "template_footer");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_FOOTER_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool backends_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE);                         // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    // GET item / PUT item
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+            ok = ok && bp_put_none(writer);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_item_schema(writer);                                           // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
 
 uint32_t backends_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
@@ -188,29 +361,25 @@ uint32_t backends_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t
         return ok ? PM_205_Content : PM_500_Internal_Server_Error;
     }
     else if(method == PM_PUT) {
-        if(bp_next(reader)) { /// merge below
-            if(!bp_is_integer(reader) || (index = bp_get_integer(reader)) > BACKENDS_NUM_MAX - 1 ||
-               !bp_close(reader) || !bp_next(reader) || !bp_is_map(reader))
-                return PM_400_Bad_Request;
-
-            backends_stop();
-            memset(&backends[index], 0, sizeof(backend_t));
-            if(bp_get_content_length(reader))
-                ok = ok && backend_unpack(reader, index);
-
-            if(ok) {
-                backends_modified = true;   // to force sending to HTTP backends for status update
-                backends_start();
-                return backends_write_to_nvs() ? PM_204_Changed : PM_500_Internal_Server_Error;
-            }
-            else {
-                backends_read_from_nvs();
-                backends_start();
-                return PM_400_Bad_Request;
-            }
-        }
-        else
+        if(!bp_next(reader) || !bp_is_integer(reader) || (index = bp_get_integer(reader)) > BACKENDS_NUM_MAX - 1 ||
+           !bp_close(reader) || !bp_next(reader) || !bp_is_map(reader))
             return PM_400_Bad_Request;
+
+        backends_stop();
+        memset(&backends[index], 0, sizeof(backend_t));
+        if(bp_get_content_length(reader))
+            ok = ok && backend_unpack(reader, index);
+
+        if(ok) {
+            backends_modified = true;   // to force sending to HTTP backends for status update
+            backends_start();
+            return backends_write_to_nvs() ? PM_204_Changed : PM_500_Internal_Server_Error;
+        }
+        else {
+            backends_read_from_nvs();
+            backends_start();
+            return PM_400_Bad_Request;
+        }
     }
     else
         return PM_405_Method_Not_Allowed;

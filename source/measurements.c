@@ -6,36 +6,35 @@
 
 #include "adc.h"
 #include "application.h"
+#include "bigpostman.h"
 #include "board.h"
 #include "devices.h"
 #include "enums.h"
 #include "hmac.h"
 #include "measurements.h"
+#include "nodes.h"
 #include "now.h"
 #include "pbuf.h"
+#include "schema.h"
 #include "wifi.h"
 
 bool measurements_full = false;
 measurements_index_t measurements_count = 0;
 measurement_t measurements[MEASUREMENTS_NUM_MAX] = {{0}};
 
-void measurements_entry_to_frame(measurements_index_t index, measurement_frame_t *frame)
+measurement_path_t measurements_build_path(measurement_tag_t tag, resource_t resource, device_bus_t bus,
+    device_multiplexer_t multiplexer, device_channel_t channel, device_part_t part, device_parameter_t parameter,
+    measurement_metric_t metric, measurement_unit_t unit)
 {
-    memset(frame, 0, sizeof(measurement_frame_t));
-
-    frame->magic = 0x1023;
-    frame->node         = measurements[index].node;
-    frame->resource     = measurements[index].resource;
-    frame->bus          = measurements[index].bus;
-    frame->multiplexer  = measurements[index].multiplexer;
-    frame->channel      = measurements[index].channel;
-    frame->address      = measurements[index].address;
-    frame->part         = measurements[index].part;
-    frame->parameter    = measurements[index].parameter;
-    frame->unit         = measurements[index].unit;
-    frame->metric       = measurements[index].metric;
-    frame->time         = measurements[index].time;
-    frame->value        = measurements[index].value;
+    return ((uint64_t)(tag & 0xFF) << 0) |
+           ((uint64_t)(resource & 0x3F) << 8) |
+           ((uint64_t)(bus & 0x07) << 14) |
+           ((uint64_t)(multiplexer & 0x07) << 17) |
+           ((uint64_t)(channel & 0x0F) << 20) |
+           ((uint64_t)(part & 0x0FFF) << 24) |
+           ((uint64_t)(parameter & 0xFF) << 36) |
+           ((uint64_t)(metric & 0x0FFF) << 44) |
+           ((uint64_t)(unit & 0xFF) << 56);
 }
 
 bool measurements_build_name(pbuf_t *buf, measurements_index_t measurement, char separator)
@@ -81,6 +80,47 @@ bool measurements_build_name(pbuf_t *buf, measurements_index_t measurement, char
     }
 }
 
+
+bool measurements_entry_to_frame(measurements_index_t index, measurement_frame_t *frame)
+{
+    frame->node    = measurements[index].node;
+    frame->path    = measurements_build_path(
+                         measurements[index].node & 0xFF,
+                         measurements[index].resource,
+                         measurements[index].bus,
+                         measurements[index].multiplexer,
+                         measurements[index].channel,
+                         measurements[index].part,
+                         measurements[index].parameter,
+                         measurements[index].metric,
+                         measurements[index].unit);
+    frame->address = measurements[index].address;
+    frame->timestamp    = measurements[index].timestamp;
+    frame->value   = measurements[index].value;
+    return true;
+}
+
+bool measurements_entry_to_adv(measurements_index_t index, measurement_adv_t *adv)
+{
+    if(measurements[index].node != wifi.mac)
+        return false;
+
+    adv->path    = measurements_build_path(
+                       measurements[index].node & 0xFF,
+                       measurements[index].resource,
+                       measurements[index].bus,
+                       measurements[index].multiplexer,
+                       measurements[index].channel,
+                       measurements[index].part,
+                       measurements[index].parameter,
+                       measurements[index].metric,
+                       measurements[index].unit);
+    adv->address = measurements[index].address;
+    adv->timestamp    = measurements[index].timestamp;
+    adv->value   = measurements[index].value;
+    return true;
+}
+
 void measurements_init()
 {
     measurements_full = false;
@@ -92,10 +132,57 @@ void measurements_measure()
 {
     devices_measure_all();
     adc_measure();
-    if(application.diagnostics) {
-        application_measure();
-        board_measure();
-    }
+    application_measure();
+    board_measure();
+}
+
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_LIST | SCHEMA_MAXIMUM_ELEMENTS);
+        ok = ok && bp_create_container(writer, BP_LIST);
+            ok = ok && bp_put_integer(writer, SCHEMA_TUPLE);
+            ok = ok && bp_create_container(writer, BP_LIST);
+
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                    ok = ok && bp_put_integer(writer, MEASUREMENTS_NAME_LENGTH);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_STRING);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_FLOAT);
+                ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_finish_container(writer);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, MEASUREMENTS_NUM_MAX);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool measurements_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);           // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE);    // Methods
+        ok = ok && write_resource_schema(writer);                  // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
 }
 
 uint32_t measurements_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
@@ -121,7 +208,7 @@ bool measurements_pack(bp_pack_t *bp)
         ok = ok && measurements_build_name(&buf, index, '_');
         ok = ok && bp_create_container(bp, BP_LIST);
             ok = ok && bp_put_string(bp, name);
-            ok = ok && bp_put_big_integer(bp, measurements[index].time ? measurements[index].time : NOW);
+            ok = ok && bp_put_big_integer(bp, measurements[index].timestamp ? measurements[index].timestamp : NOW);
             ok = ok && bp_put_string(bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(bp, measurements[index].value);
         ok = ok && bp_finish_container(bp);
@@ -161,7 +248,7 @@ bool measurements_entry_to_bigpostman(measurements_index_t index, char *buffer, 
     ok = ok && bp_create_container(&bp, BP_LIST);
         ok = ok && bp_create_container(&bp, BP_LIST);
             ok = ok && bp_put_string(&bp, name);
-            ok = ok && bp_put_big_integer(&bp, measurements[index].time ? measurements[index].time : NOW);
+            ok = ok && bp_put_big_integer(&bp, measurements[index].timestamp ? measurements[index].timestamp : NOW);
             ok = ok && bp_put_string(&bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(&bp, measurements[index].value);
         ok = ok && bp_finish_container(&bp);
@@ -198,7 +285,7 @@ bool measurements_entry_to_senml_row(measurements_index_t index, pbuf_t *buf)
     ok = ok && pbuf_printf(buf,"{\"n\":\"urn:dev:mac:");
     ok = ok && measurements_build_name(buf, index, '_');
     ok = ok && pbuf_printf(buf,"\",\"u\":\"%s\",\"v\":%f,\"t\":%lli}", unit_labels[measurements[index].unit],
-        measurements[index].value, (int64_t) (measurements[index].time ? measurements[index].time : NOW));
+        measurements[index].value, (int64_t) (measurements[index].timestamp ? measurements[index].timestamp : NOW));
     return ok;
 }
 
@@ -246,7 +333,7 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
                 case 'u': ok = ok && pbuf_printf(buf, "%s", unit_labels[measurements[index].unit]); break;
                 case 'U': ok = ok && pbuf_printf(buf, "%s", measurements[index].unit ? unit_labels[measurements[index].unit] : "none"); break;
                 case 'v': ok = ok && pbuf_printf(buf, "%f", measurements[index].value); break;
-                case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) (measurements[index].time ? measurements[index].time : NOW)); break;
+                case 't': ok = ok && pbuf_printf(buf, "%lli", (int64_t) (measurements[index].timestamp ? measurements[index].timestamp : NOW)); break;
                 case '_': ok = ok && pbuf_printf(buf, "\n"); break;
                 case '<': ok = ok && pbuf_printf(buf, "\r"); break;
                 case '>': ok = ok && pbuf_printf(buf, "\t"); break;
@@ -280,12 +367,13 @@ bool measurements_to_template(char *buffer, size_t *buffer_size, char *template_
     return ok;
 }
 
-bool measurements_append(measurement_node_t node,          resource_t resource,          device_bus_t bus,
-                         device_multiplexer_t multiplexer, device_channel_t channel,     device_address_t address,
-                         device_part_t part,               device_parameter_t parameter, measurement_metric_t metric,
-                         time_t time,                      measurement_unit_t unit,      float value) // 😱
+bool measurements_append(node_address_t node,           resource_t resource,          device_bus_t bus,
+                         device_multiplexer_t multiplexer,  device_channel_t channel,     device_address_t address,
+                         device_part_t part,                device_parameter_t parameter, measurement_metric_t metric,
+                         measurement_timestamp_t timestamp, measurement_unit_t unit,      float value) // 😱
 {
-    if((application.queue || !measurements_full) && (!application.queue || time > 1680000000) && metric < METRIC_NUM_MAX && unit < UNIT_NUM_MAX) {
+    if((application.queue || !measurements_full) && (!application.queue || timestamp > 1680000000)
+      && resource < RESOURCE_NUM_MAX && part < PART_NUM_MAX && metric < METRIC_NUM_MAX && unit < UNIT_NUM_MAX) {
         measurements[measurements_count].node = node;
         measurements[measurements_count].resource = resource;
         measurements[measurements_count].bus = bus;
@@ -295,7 +383,7 @@ bool measurements_append(measurement_node_t node,          resource_t resource, 
         measurements[measurements_count].part = part;
         measurements[measurements_count].parameter = parameter;
         measurements[measurements_count].metric = metric;
-        measurements[measurements_count].time = time > 1680000000 ? time : 0;
+        measurements[measurements_count].timestamp = timestamp > 1680000000 ? timestamp : 0;
         measurements[measurements_count].unit = unit;
         measurements[measurements_count].value = value;
 
@@ -307,19 +395,41 @@ bool measurements_append(measurement_node_t node,          resource_t resource, 
         return false;
 }
 
-bool measurements_append_from_device(devices_index_t device, device_parameter_t parameter, measurement_metric_t metric, time_t time, measurement_unit_t unit, float value)
+bool measurements_append_from_device(devices_index_t device, device_parameter_t parameter, measurement_metric_t metric,
+                                     measurement_timestamp_t timestamp, measurement_unit_t unit, float value)
 {
-    if(device < DEVICES_NUM_MAX && parameter < DEVICES_PARAMETERS_NUM_MAX && metric < METRIC_NUM_MAX && unit < UNIT_NUM_MAX)
+    if(device < DEVICES_NUM_MAX && parameter < DEVICES_PARAMETERS_NUM_MAX
+      && (!devices[device].mask || devices[device].mask & 1 << parameter))
         return measurements_append(wifi.mac, devices[device].resource, devices[device].bus, devices[device].multiplexer,
                                    devices[device].channel, devices[device].address, devices[device].part, parameter,
-                                   metric, time, unit, value + devices[device].offsets[parameter]);
+                                   metric, timestamp, unit, value + devices[device].offsets[parameter]);
     else
         return false;
 }
 
+bool measurements_append_with_path(node_address_t node, measurement_path_t path, device_address_t address,
+                                   measurement_timestamp_t timestamp, measurement_value_t value)
+{
+    return measurements_append(node,
+        (path & 0x0000000000003F00) >> 8,    // resource:6
+        (path & 0x000000000001C000) >> 14,   // bus:3
+        (path & 0x00000000000E0000) >> 17,   // multiplexer:3
+        (path & 0x0000000000F00000) >> 20,   // channel:4
+        address,
+        (path & 0x0000000FFF000000) >> 24,   // part:12
+        (path & 0x00000FF000000000) >> 36,   // parameter:8
+        (path & 0x00FFF00000000000) >> 44,   // metric:12
+        timestamp,
+        (path & 0xFF00000000000000) >> 56,   // unit:8
+        value);
+}
+
 bool measurements_append_from_frame(measurement_frame_t *frame)
 {
-    return measurements_append(frame->node,    frame->resource, frame->bus,  frame->multiplexer,
-                               frame->channel, frame->address,  frame->part, frame->parameter,
-                               frame->metric,  frame->time,     frame->unit, frame->value);
+    return measurements_append_with_path(frame->node, frame->path, frame->address, frame->timestamp, frame->value);
+}
+
+bool measurements_append_from_adv(node_address_t node, measurement_adv_t *adv)
+{
+    return measurements_append_with_path(node, adv->path, adv->address, adv->timestamp, adv->value);
 }

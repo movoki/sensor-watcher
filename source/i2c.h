@@ -13,7 +13,7 @@
 
 #include "devices.h"
 #include "enums.h"
-#include "bigpostman.h"
+#include "bigpacks.h"
 
 typedef struct {
 	uint32_t	speed;
@@ -35,6 +35,7 @@ esp_err_t i2c_start();
 esp_err_t i2c_stop();
 void i2c_set_power(bool state);
 void i2c_set_default();
+bool i2c_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t i2c_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 void i2c_detect_devices();

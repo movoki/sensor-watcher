@@ -21,6 +21,7 @@ void adc_init();
 bool adc_read_from_nvs();
 bool adc_write_to_nvs();
 bool adc_measure();
+bool adc_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t adc_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 #endif

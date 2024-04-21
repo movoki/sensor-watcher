@@ -13,6 +13,7 @@
 #include "enums.h"
 #include "measurements.h"
 #include "now.h"
+#include "schema.h"
 #include "wifi.h"
 
 adc_t adc;
@@ -70,6 +71,61 @@ bool adc_write_to_nvs()
     }
 }
 
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    int gpio;
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "channels");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_LIST | SCHEMA_UNIQUE);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_VALUES);
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        for(int i = 0; i <= ADC_CHANNEL_9; i++) {
+                            adc_oneshot_channel_to_io(ADC_UNIT_1, i, &gpio);
+                            ok = ok && bp_put_integer(writer, gpio);
+                        }
+                    ok = ok && bp_finish_container(writer);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "power_pin");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_NULL | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                ok = ok && bp_put_integer(writer, 0);
+                ok = ok && bp_put_integer(writer, GPIO_NUM_MAX - 1);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "multiplier");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_FLOAT);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool adc_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
+
 uint32_t adc_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
     bool ok = true;
@@ -88,7 +144,7 @@ uint32_t adc_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
                 }
             ok = ok && bp_finish_container(writer);
             ok = ok && bp_put_string(writer, "power_pin");
-            ok = ok && bp_put_integer(writer, adc.power_pin);
+            ok = ok && (adc.power_pin == 0xFF ? bp_put_none(writer) : bp_put_integer(writer, adc.power_pin));
             ok = ok && bp_put_string(writer, "multiplier");
             ok = ok && bp_put_float(writer, adc.multiplier);
         ok = ok && bp_finish_container(writer);
@@ -118,7 +174,7 @@ uint32_t adc_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
                         ok = false;
                 }
                 else if(bp_match(reader, "power_pin"))
-                    adc.power_pin = bp_get_integer(reader);
+                    adc.power_pin = bp_is_none(reader) ? 0xFF : bp_get_integer(reader);
                 else if(bp_match(reader, "multiplier"))
                     adc.multiplier = bp_get_float(reader);
                 else

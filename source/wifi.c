@@ -10,12 +10,13 @@
 #include <nvs_flash.h>
 
 #include "application.h"
+#include "bigpostman.h"
 #include "enums.h"
 #include "measurements.h"
 #include "now.h"
+#include "schema.h"
 #include "wifi.h"
 
-wifi_config_t wifi_config; /// hack
 wifi_t wifi;
 
 void wifi_init()
@@ -28,6 +29,7 @@ void wifi_init()
     wifi.disconnected = false;
 	wifi.ssid[0] = 0;
 	wifi.password[0] = 0;
+    wifi.diagnostics = false;
     wifi.mac = 0;
 
     err = err ? err : (wifi_read_from_nvs() ? ESP_OK : ESP_FAIL);
@@ -142,18 +144,19 @@ void wifi_event_handler(void* args, esp_event_base_t base, int32_t id, void* eve
 
 bool wifi_read_from_nvs()
 {
+    size_t size;
     esp_err_t err;
     nvs_handle_t handle;
 
     err = nvs_open("wifi", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
-        size_t size;
         size = sizeof(wifi.ssid);
         if(nvs_get_str(handle, "ssid", wifi.ssid, &size) != ESP_OK)
             wifi.ssid[0] = 0;
         size = sizeof(wifi.password);
         if(nvs_get_str(handle, "password", wifi.password, &size) != ESP_OK)
             wifi.password[0] = 0;
+        nvs_get_u8(handle, "diagnostics", (uint8_t *) &(wifi.diagnostics));
         nvs_close(handle);
         ESP_LOGI(__func__, "done");
         return true;
@@ -174,6 +177,7 @@ bool wifi_write_to_nvs()
     if(err == ESP_OK) {
 		ok = ok && !nvs_set_str(handle, "ssid", wifi.ssid);
 		ok = ok && !nvs_set_str(handle, "password", wifi.password);
+        ok = ok && !nvs_set_u8(handle, "diagnostics", wifi.diagnostics);
         ok = ok && !nvs_commit(handle);
         nvs_close(handle);
         ESP_LOGI(__func__, "%s", ok ? "done" : "failed");
@@ -183,6 +187,71 @@ bool wifi_write_to_nvs()
         ESP_LOGI(__func__, "nvs_open failed");
         return false;
     }
+}
+
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "status");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_VALUES);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                for(int i = 0; i < WIFI_STATUS_NUM_MAX; i++)
+                    ok = ok && bp_put_string(writer, wifi_status_labels[i]);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "mac_address");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, sizeof(wifi.mac) * 2 + 1);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "ssid");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, WIFI_SSID_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "password");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, WIFI_PASSWORD_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "diagnostics");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "rssi");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool wifi_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
 }
 
 uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
@@ -207,6 +276,8 @@ uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wr
         ok = ok && bp_put_string(writer, wifi.ssid);
         ok = ok && bp_put_string(writer, "password");
         ok = ok && bp_put_string(writer, wifi.password);
+        ok = ok && bp_put_string(writer, "diagnostics");
+        ok = ok && bp_put_boolean(writer, wifi.diagnostics);
         ok = ok && bp_put_string(writer, "rssi");
         ok = ok && bp_put_integer(writer, rssi);
         ok = ok && bp_finish_container(writer);
@@ -221,6 +292,8 @@ uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wr
                     ok = ok && bp_get_string(reader, wifi.ssid, sizeof(wifi.ssid) / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
                 else if(bp_match(reader, "password"))
                     ok = ok && bp_get_string(reader, wifi.password, sizeof(wifi.password) / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
+                else if(bp_match(reader, "diagnostics"))
+                    wifi.diagnostics = bp_get_boolean(reader);
                 else bp_next(reader);
             }
             bp_close(reader);
@@ -239,6 +312,6 @@ uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wr
 void wifi_measure()
 {
     int rssi;
-    if(wifi.status >= WIFI_STATUS_CONNECTED && esp_wifi_sta_get_rssi(&rssi) == ESP_OK)
+    if(wifi.diagnostics && wifi.status >= WIFI_STATUS_CONNECTED && esp_wifi_sta_get_rssi(&rssi) == ESP_OK)
         measurements_append(wifi.mac, RESOURCE_WIFI, 0, 0, 0, 0, 0, 0, METRIC_RSSI, NOW, UNIT_dBm, rssi);
 }

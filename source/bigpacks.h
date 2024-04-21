@@ -25,7 +25,7 @@
 
 #define BP_INVALID_LENGTH      0xFFFFFFFF
 
-#define BP_MAX_CURSOR_LEVELS   4
+#define BP_MAX_CURSOR_LEVELS   8
 
 
 typedef uint32_t bp_type_t;
@@ -96,6 +96,7 @@ bool bp_put_binary(bp_pack_t *pack, bp_type_t *value, bp_length_t length);
 bool bp_create_container(bp_pack_t *pack, bp_type_t type);
 bool bp_finish_container(bp_pack_t *pack);
 
+void bp_reset_cursor(bp_pack_t *pack);
 bool bp_save_cursor(bp_pack_t *pack);
 bool bp_restore_cursor(bp_pack_t *pack);
 

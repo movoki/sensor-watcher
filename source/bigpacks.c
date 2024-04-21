@@ -324,6 +324,11 @@ bool bp_finish_container(bp_pack_t *pack)
         return false;
 }
 
+void bp_reset_cursor(bp_pack_t *pack)
+{
+    pack->cursor = &(pack->stack[0]);
+}
+
 bool bp_save_cursor(bp_pack_t *pack)
 {
     if(pack->cursor < &(pack->stack[BP_MAX_CURSOR_LEVELS - 1])) {

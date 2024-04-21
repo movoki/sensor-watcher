@@ -7,40 +7,57 @@
 #include <esp_timer.h>
 #include <time.h>
 #include <nvs_flash.h>
+#include <esp_bt.h>
 #include <nimble/nimble_port.h>
 #include <nimble/nimble_port_freertos.h>
 #include <host/ble_gap.h>
 
+#include "bigpostman.h"
 #include "ble.h"
 #include "devices.h"
 #include "enums.h"
 #include "measurements.h"
+#include "now.h"
+#include "schema.h"
+#include "wifi.h"
 
 #define BLE_ADDR_TYPE_PUBLIC 0x00
 
 ble_t ble;
 uint32_t ble_measurements_count = 0;
-ble_measurement_t ble_measurements[BLE_MEASUREMENTS_NUM_MAX] = {{0}};
+measurement_frame_t ble_measurements[BLE_MEASUREMENTS_NUM_MAX] = {{0}};
 
 
 bool ble_init()
 {
-    ble.enabled = false;
+    ble.running = false;
     ble.error = ESP_OK;
+
+    ble.receive = false;
+    ble.send = false;
+    ble.persistent_only = false;
     ble.minimum_rssi = -100;
     ble.scan_duration = 45;
-    ble.running = false;
+
+
+    #ifdef CONFIG_IDF_TARGET_ESP32
+        ble.power_level = 5;    // +3 dBm
+    #else
+        ble.power_level = 9;    // +3 dBm
+    #endif
 
     ble_read_from_nvs();
-    return ble.enabled ? ble_start() : true;
+    return ble.receive || ble.send ? ble_start() : true;
 }
 
 bool ble_start()
 {
     if(!ble.running) {
         ble.running = (ble.error = nimble_port_init()) == ESP_OK;
-        if(ble.running)
+        if(ble.running) {
             nimble_port_freertos_init(ble_host_task);
+            esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ble.power_level);
+        }
         else
             ESP_LOGE(__func__, "Failed to start nimble %d ", ble.error);
     }
@@ -70,9 +87,12 @@ bool ble_read_from_nvs()
     nvs_handle_t handle;
 
     if(nvs_open("ble", NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_get_u8(handle, "enabled", (uint8_t *) &(ble.enabled));
+        nvs_get_u8(handle, "receive", (uint8_t *) &(ble.receive));
+        nvs_get_u8(handle, "send", (uint8_t *) &(ble.send));
+        nvs_get_u8(handle, "persistent_only", (uint8_t *) &(ble.persistent_only));
         nvs_get_i8(handle, "minimum_rssi", &(ble.minimum_rssi));
         nvs_get_u8(handle, "scan_duration", &(ble.scan_duration));
+        nvs_get_u8(handle, "power_level", &(ble.power_level));
         nvs_close(handle);
         ESP_LOGI(__func__, "done");
         return true;
@@ -89,9 +109,12 @@ bool ble_write_to_nvs()
     nvs_handle_t handle;
 
     if(nvs_open("ble", NVS_READWRITE, &handle) == ESP_OK) {
-        ok = ok && !nvs_set_u8(handle, "enabled", ble.enabled);
+        ok = ok && !nvs_set_u8(handle, "receive", ble.receive);
+        ok = ok && !nvs_set_u8(handle, "send", ble.send);
+        ok = ok && !nvs_set_u8(handle, "persistent_only", ble.persistent_only);
         ok = ok && !nvs_set_i8(handle, "minimum_rssi", ble.minimum_rssi);
         ok = ok && !nvs_set_u8(handle, "scan_duration", ble.scan_duration);
+        ok = ok && !nvs_set_u8(handle, "power_level", ble.power_level);
         ok = ok && !nvs_commit(handle);
         nvs_close(handle);
         ESP_LOGI(__func__, "%s", ok ? "done" : "failed");
@@ -103,6 +126,77 @@ bool ble_write_to_nvs()
     }
 }
 
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "receive");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "send");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "persistent_only");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "minimum_rssi");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                ok = ok && bp_put_integer(writer, -128);
+                ok = ok && bp_put_integer(writer, 127);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "scan_duration");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM);
+                ok = ok && bp_put_integer(writer, 0);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "power_level");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                #ifdef CONFIG_IDF_TARGET_ESP32
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer,7);
+                #elif CONFIG_IDF_TARGET_ESP32C6
+                    ok = ok && bp_put_integer(writer, 3);
+                    ok = ok && bp_put_integer(writer,15);
+                #else
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer,15);
+                #endif
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool ble_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
+
 uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
     bool ok = true;
@@ -110,12 +204,18 @@ uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
 
     if(method == PM_GET) {
         ok = ok && bp_create_container(writer, BP_MAP);
-            ok = ok && bp_put_string(writer, "enabled");
-            ok = ok && bp_put_boolean(writer, ble.enabled);
+            ok = ok && bp_put_string(writer, "receive");
+            ok = ok && bp_put_boolean(writer, ble.receive);
+            ok = ok && bp_put_string(writer, "send");
+            ok = ok && bp_put_boolean(writer, ble.send);
+            ok = ok && bp_put_string(writer, "persistent_only");
+            ok = ok && bp_put_boolean(writer, ble.persistent_only);
             ok = ok && bp_put_string(writer, "minimum_rssi");
             ok = ok && bp_put_integer(writer, ble.minimum_rssi);
             ok = ok && bp_put_string(writer, "scan_duration");
             ok = ok && bp_put_integer(writer, ble.scan_duration);
+            ok = ok && bp_put_string(writer, "power_level");
+            ok = ok && bp_put_integer(writer, ble.power_level);
         ok = ok && bp_finish_container(writer);
         response = ok ? PM_205_Content : PM_500_Internal_Server_Error;
 
@@ -125,18 +225,32 @@ uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
             response = PM_400_Bad_Request;
         else {
             while(bp_next(reader)) {
-                if(bp_match(reader, "enabled"))
-                    ble.enabled = bp_get_boolean(reader);
+                if(bp_match(reader, "receive"))
+                    ble.receive = bp_get_boolean(reader);
+                else if(bp_match(reader, "send"))
+                    ble.send = bp_get_boolean(reader);
+                else if(bp_match(reader, "persistent_only"))
+                    ble.persistent_only = bp_get_boolean(reader);
                 else if(bp_match(reader, "minimum_rssi"))
                     ble.minimum_rssi = bp_get_integer(reader);
                 else if(bp_match(reader, "scan_duration"))
                     ble.scan_duration = bp_get_integer(reader);
+                else if(bp_match(reader, "power_level"))
+                    ble.power_level = bp_get_integer(reader);
                 else bp_next(reader);
             }
             bp_close(reader);
+            #ifdef CONFIG_IDF_TARGET_ESP32
+                ok = ok && ble.power_level < 8;
+            #elif CONFIG_IDF_TARGET_ESP32C6
+                ok = ok && ble.power_level > 2 && ble.power_level  < 16;
+            #else
+                ok = ok && ble.power_level < 16;
+            #endif
             ok = ok && ble_write_to_nvs();
-            ok = ok && (ble.enabled && !ble.running ? ble_start() : true);
-            ok = ok && (!ble.enabled && ble.running ? ble_stop() : true);
+            ok = ok && ((ble.receive || ble.send) && !ble.running ? ble_start() : true);
+            ok = ok && (!(ble.receive || ble.send) && ble.running ? ble_stop() : true);
+            ok = ok && (ble.running ? esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ble.power_level) == ESP_OK : true);
             response = ok ? PM_204_Changed : PM_500_Internal_Server_Error;
         }
     }
@@ -149,13 +263,39 @@ uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
 
 void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t *data, uint8_t length)
 {
+    int node_index;
+    int device_index;
     device_part_t part = 0;
     const uint8_t minew_s1_prefix[] = { 0x02, 0x01, 0x06, 0x03, 0x03, 0xe1, 0xff, 0x10, 0x16, 0xe1, 0xff, 0xa1, 0x01 };
 
     if(rssi < ble.minimum_rssi)
         return;
 
-    if(length == 31 && data[5] == 0x99 && data[6] == 0x04 && data[7] == 0x05)           // Ruvitag 5 (Raw V2)
+    if(length == 31 && data[5] == 0x57 && data[6] == 0x53) {  // SensorWatcher node
+        node_t node = {
+            .address = address,
+            .timestamp = -1,
+        };
+
+        if((node_index = nodes_get(&node)) < 0) {
+            if(ble.persistent_only)
+                return;
+            if((node_index = nodes_append(&node)) < 0) {
+                ESP_LOGI(__func__, "Cannot add discovered node %016llX", address);
+                return;
+            }
+        }
+        if(ble.persistent_only && !nodes[node_index].persistent)
+            return;
+
+        nodes[node_index].rssi = rssi;
+        nodes[node_index].timestamp = NOW;
+        measurement_adv_t adv;
+        memcpy(&adv, data + 7, sizeof(adv));    // because data may not be aligned to 64-bit
+        ble_measurements_update(address, adv.path, adv.address, adv.timestamp, adv.value);
+        return;
+    }
+    else if(length == 31 && data[5] == 0x99 && data[6] == 0x04 && data[7] == 0x05)  // Ruvitag 5 (Raw V2)
         part = PART_RUUVITAG;
     else if(data[5] == 0x95 && data[6] == 0xFE && data[7] == 0x50 && data[8] == 0x20 && data[9] == 0xAA && data[10] == 0x01)  // Xiaomi LYWSDCGQ
         part = PART_XIAOMI_LYWSDCGQ;
@@ -172,21 +312,27 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
         .address = address,
         .part = part,
         .mask = parts[part].mask,
-        .status = true,
-        .fixed = false,
-        .updated = -1,
+        .status = DEVICE_STATUS_WORKING,
+        .persistent = false,
+        .timestamp = -1,
     };
 
-    int device_index = devices_get_or_append(&device);
-    if(device_index < 0) {
-        ESP_LOGI(__func__, "Cannot add discovered BLE device %s %016llX", parts[part].label, address);
-        return;
+    if((device_index = devices_get(&device)) < 0) {
+        if(ble.persistent_only)
+            return;
+        if((device_index = devices_append(&device)) < 0) {
+            ESP_LOGI(__func__, "Cannot add discovered BLE device %s %016llX", parts[part].label, address);
+            return;
+        }
     }
+    if(ble.persistent_only && !devices[device_index].persistent)
+        return;
 
-    time_t timestamp = time(NULL);
+    time_t timestamp = NOW;
+    device_mask_t device_mask = devices[device_index].mask ? devices[device_index].mask : ~0;
     devices[device_index].rssi = rssi;
-    devices[device_index].updated = timestamp;
-    devices[device_index].status = true;
+    devices[device_index].timestamp = timestamp;
+    devices[device_index].status = DEVICE_STATUS_WORKING;
 
     switch(part) {
     case PART_RUUVITAG: {
@@ -199,15 +345,15 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
         float battery = ((uint16_t)((data[20] << 3) | (data[21] >> 5)) + 1600) / 1000.0;
         uint8_t movements = data[22];
 
-        ble_measurements_update(device_index, 0, METRIC_Temperature,   timestamp, UNIT_Cel,  temperature);
-        ble_measurements_update(device_index, 1, METRIC_Humidity,      timestamp, UNIT_RH,   humidity > 100.0 ? 100.0 : humidity);
-        ble_measurements_update(device_index, 2, METRIC_Pressure,      timestamp, UNIT_hPa,  pressure);
-        ble_measurements_update(device_index, 3, METRIC_Movements,     timestamp, UNIT_NONE, movements);
-        ble_measurements_update(device_index, 4, METRIC_AccelerationX, timestamp, UNIT_m_s2, acceleration_x);
-        ble_measurements_update(device_index, 5, METRIC_AccelerationY, timestamp, UNIT_m_s2, acceleration_y);
-        ble_measurements_update(device_index, 6, METRIC_AccelerationZ, timestamp, UNIT_m_s2, acceleration_z);
-        ble_measurements_update(device_index, 7, METRIC_BatteryLevel,  timestamp, UNIT_V,    battery);
-        ble_measurements_update(device_index, 8, METRIC_RSSI,          timestamp, UNIT_dBm,  rssi);
+        if(device_mask & 1 << 0) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,   UNIT_Cel ), address, timestamp, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,      UNIT_RH  ), address, timestamp, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_Pressure,      UNIT_hPa ), address, timestamp, pressure);
+        if(device_mask & 1 << 3) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 3, METRIC_Movements,     UNIT_NONE), address, timestamp, movements);
+        if(device_mask & 1 << 4) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 4, METRIC_AccelerationX, UNIT_m_s2), address, timestamp, acceleration_x);
+        if(device_mask & 1 << 5) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 5, METRIC_AccelerationY, UNIT_m_s2), address, timestamp, acceleration_y);
+        if(device_mask & 1 << 6) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 6, METRIC_AccelerationZ, UNIT_m_s2), address, timestamp, acceleration_z);
+        if(device_mask & 1 << 7) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 7, METRIC_BatteryLevel,  UNIT_V   ), address, timestamp, battery);
+        if(device_mask & 1 << 8) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 8, METRIC_RSSI,          UNIT_dBm ), address, timestamp, rssi);
         break;
     }
     case PART_XIAOMI_LYWSDCGQ: {
@@ -215,20 +361,20 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
             float temperature = (int16_t)(((uint16_t)data[22] << 8) | data[21]) / 10.0;
             float humidity = (int16_t)(((uint16_t)data[24] << 8) | data[23]) / 10.0;
 
-            ble_measurements_update(device_index, 0, METRIC_Temperature,   timestamp, UNIT_Cel,   temperature);
-            ble_measurements_update(device_index, 1, METRIC_Humidity,      timestamp, UNIT_RH,    humidity > 100.0 ? 100.0 : humidity);
+            if(device_mask & 1 << 0) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature, UNIT_Cel), address, timestamp,  temperature);
+            if(device_mask & 1 << 1) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,    UNIT_RH ), address, timestamp,  humidity > 100.0 ? 100.0 : humidity);
         }
         else if(data[18] == 0x0A && data[19] == 0x10 && data[20] == 0x01)   // 0x100A frame, battery level
-            ble_measurements_update(device_index, 2, METRIC_BatteryLevel,  timestamp, UNIT_ratio, data[21] / 100.0);
+            if(device_mask & 1 << 2) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio), address, timestamp, data[21] / 100.0);
         break;
     }
     case PART_MINEW_S1: {
         float temperature = (int16_t)(((uint16_t)data[14] << 8) | data[15]) / 256.0;
         float humidity = (int16_t)(((uint16_t)data[16] << 8) | data[17]) / 256.0;
 
-        ble_measurements_update(device_index, 0, METRIC_Temperature,   timestamp, UNIT_Cel,   temperature);
-        ble_measurements_update(device_index, 1, METRIC_Humidity,      timestamp, UNIT_RH,    humidity > 100.0 ? 100.0 : humidity);
-        ble_measurements_update(device_index, 2, METRIC_BatteryLevel,  timestamp, UNIT_ratio, data[13] / 100.0);
+        if(device_mask & 1 << 0) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,  UNIT_Cel  ),  address, timestamp, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,     UNIT_RH   ),  address, timestamp, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(wifi.mac, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio),  address, timestamp, data[13] / 100.0);
         break;
     }
     default:
@@ -247,9 +393,6 @@ int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
         ble_handle_adv(address, event->disc.rssi, event->disc.data, event->disc.length_data);
         // esp_log_buffer_hex("BLE ADV:", event->disc.data,  event->disc.length_data);
         break;
-    // case BLE_GAP_EVENT_EXT_DISC:
-    //     ble_handle_adv(address, event->disc.rssi, event->disc.data, event->disc.length_data);
-    //     break;
     case BLE_GAP_EVENT_DISC_COMPLETE:
         ESP_LOGI(__func__, "discovery complete; reason=%d\n", event->disc_complete.reason);
         break;
@@ -289,23 +432,21 @@ bool ble_stop_scan()
     return ble_gap_disc_cancel() == 0;
 }
 
-bool ble_measurements_update(devices_index_t device, device_parameter_t parameter, uint8_t metric, time_t timestamp, uint8_t unit, float value)
+bool ble_measurements_update(node_address_t node, measurement_path_t path, device_address_t address, measurement_timestamp_t timestamp, measurement_value_t value)
 {
     int i;
     for(i = 0; i < ble_measurements_count; i++) {
-        if(ble_measurements[i].device == device && ble_measurements[i].parameter == parameter) {
-            ble_measurements[ble_measurements_count].time = timestamp > 1680000000 ? timestamp : 0;
+        if(ble_measurements[i].path == path && ble_measurements[i].address == address && ble_measurements[i].node == node) {
+            ble_measurements[ble_measurements_count].timestamp = timestamp > 1680000000 ? timestamp : 0;
             ble_measurements[ble_measurements_count].value = value;
             return true;
         }
     }
-    if(i == ble_measurements_count && ble_measurements_count < BLE_MEASUREMENTS_NUM_MAX &&
-      (!devices[device].mask || (devices[device].mask & (1 << parameter)))) {
-        ble_measurements[ble_measurements_count].device = device;
-        ble_measurements[ble_measurements_count].parameter = parameter;
-        ble_measurements[ble_measurements_count].metric = metric;
-        ble_measurements[ble_measurements_count].time = timestamp > 1680000000 ? timestamp : 0;
-        ble_measurements[ble_measurements_count].unit = unit;
+    if(i == ble_measurements_count && ble_measurements_count < BLE_MEASUREMENTS_NUM_MAX) {
+        ble_measurements[ble_measurements_count].node = node;
+        ble_measurements[ble_measurements_count].path = path;
+        ble_measurements[ble_measurements_count].address = address;
+        ble_measurements[ble_measurements_count].timestamp = timestamp > 1680000000 ? timestamp : 0;
         ble_measurements[ble_measurements_count].value = value;
         ble_measurements_count += 1;
         return true;
@@ -317,6 +458,35 @@ bool ble_measurements_update(devices_index_t device, device_parameter_t paramete
 void ble_merge_measurements()
 {
     for(int i = 0; i < ble_measurements_count; i++)
-        measurements_append_from_device(ble_measurements[i].device, ble_measurements[i].parameter,
-            ble_measurements[i].metric, ble_measurements[i].time, ble_measurements[i].unit, ble_measurements[i].value);
+        measurements_append_from_frame(&ble_measurements[i]);
+}
+
+bool ble_send_measurements()
+{
+    int err = 0;
+    bool ok = true;
+    uint64_t raw_adv[4] = { 0x5357FF1B04010200 };
+    measurements_index_t index = 0;
+    measurements_index_t count = measurements_full ? MEASUREMENTS_NUM_MAX : measurements_count;
+
+    struct ble_gap_adv_params adv_params = {
+        .conn_mode = BLE_GAP_CONN_MODE_NON,
+        .disc_mode = BLE_GAP_DISC_MODE_GEN,
+        .itvl_min = 32,
+        .itvl_max = 32,
+    };
+
+    for(int n = 0; n != count && ok; n++) {
+        index = measurements_full ? (measurements_count + n) % MEASUREMENTS_NUM_MAX : n;
+        if(measurements_entry_to_adv(index, (measurement_adv_t *) (raw_adv + 1))) {
+            ok = ok && (err = ble_gap_adv_set_data((uint8_t *) raw_adv + 1, sizeof(raw_adv) - 1)) == ESP_OK;
+            ok = ok && (err = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, NULL, NULL)) == ESP_OK;
+            vTaskDelay (80 / portTICK_PERIOD_MS);
+            ok = ok && (err = ble_gap_adv_stop()) == ESP_OK;
+            vTaskDelay (20 / portTICK_PERIOD_MS);
+            if(!ok)
+                ESP_LOGI(__func__, "sending measurement %i failed with error %i", n, err);
+        }
+    }
+    return ok;
 }

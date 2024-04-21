@@ -8,6 +8,7 @@
 const char *board_model_labels[] = {
 	[BOARD_MODEL_NONE]	 					"",
 	[BOARD_MODEL_GENERIC_ESP32] 			"generic_esp32",
+	[BOARD_MODEL_GENERIC_ESP32_S3] 			"generic_esp32_s3",
 	[BOARD_MODEL_M5STACK_ATOM_LITE] 		"m5stack_atom_lite",
 	[BOARD_MODEL_M5STACK_ATOM_MATRIX] 		"m5stack_atom_matrix",
 	[BOARD_MODEL_M5STACK_ATOM_ECHO] 		"m5stack_atom_echo",
@@ -60,7 +61,13 @@ const char *backend_format_labels[] = {
 	[BACKEND_FORMAT_SENML]		"senml",
 	[BACKEND_FORMAT_BIGPOSTMAN]	"bigpostman",
 	[BACKEND_FORMAT_TEMPLATE]	"template",
-	[BACKEND_FORMAT_BINARY]		"binary",
+	[BACKEND_FORMAT_FRAME]		"frame",
+};
+
+const char *device_status_labels[] = {
+	[DEVICE_STATUS_WORKING]	"working",
+	[DEVICE_STATUS_ERROR]	"error",
+	[DEVICE_STATUS_UNSEEN]	"unseen",
 };
 
 const char *metric_labels[] = {
@@ -116,61 +123,3 @@ const char *wifi_status_labels[] = {
 	[WIFI_STATUS_CONNECTED]		"connected",
 	[WIFI_STATUS_ONLINE]		"online",
 };
-
-
-uint32_t enums_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
-{
-    bool ok = true;
-
-    if(method == PM_GET) {
-        ok = ok && bp_create_container(writer, BP_MAP);
-
-	        ok = ok && bp_put_string(writer, "board.model");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 0; i < BOARD_MODEL_NUM_MAX; i++)
-		        ok = ok && bp_put_string(writer, board_model_labels[i]);
-	        ok = ok && bp_finish_container(writer);
-
-	        ok = ok && bp_put_string(writer, "backend.auth");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 0; i < BACKEND_AUTH_NUM_MAX; i++)
-		        ok = ok && bp_put_string(writer, backend_auth_labels[i]);
-	        ok = ok && bp_finish_container(writer);
-
-	        ok = ok && bp_put_string(writer, "backend.format");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 0; i < BACKEND_FORMAT_NUM_MAX; i++)
-		        ok = ok && bp_put_string(writer, backend_format_labels[i]);
-	        ok = ok && bp_finish_container(writer);
-
-	        ok = ok && bp_put_string(writer, "measurement.resource");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 0; i < RESOURCE_NUM_MAX; i++)
-		        ok = ok && bp_put_string(writer, resource_labels[i]);
-	        ok = ok && bp_finish_container(writer);
-
-	        ok = ok && bp_put_string(writer, "parts");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 1; i < PART_NUM_MAX; i++) {
-		        ok = ok && bp_create_container(writer, BP_LIST);
-		        ok = ok && bp_put_string(writer, parts[i].label);
-		        ok = ok && bp_put_string(writer, resource_labels[parts[i].resource]);
-		        ok = ok && bp_put_integer(writer, parts[i].id_start);
-		        ok = ok && bp_put_integer(writer, parts[i].id_span);
-		        ok = ok && bp_finish_container(writer);
-	        }
-	        ok = ok && bp_finish_container(writer);
-
-	        ok = ok && bp_put_string(writer, "wifi.status");
-	        ok = ok && bp_create_container(writer, BP_LIST);
-	        for(int i = 0; i < WIFI_STATUS_NUM_MAX; i++)
-		        ok = ok && bp_put_string(writer, wifi_status_labels[i]);
-	        ok = ok && bp_finish_container(writer);
-
-        ok = ok && bp_finish_container(writer);
-        return ok ? PM_205_Content : PM_500_Internal_Server_Error;
-    }
-    else
-        return PM_405_Method_Not_Allowed;
-}
-

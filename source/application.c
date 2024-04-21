@@ -8,10 +8,12 @@
 #include <nvs_flash.h>
 
 #include "application.h"
+#include "bigpostman.h"
 #include "enums.h"
 #include "measurements.h"
-#include "wifi.h"
 #include "now.h"
+#include "schema.h"
+#include "wifi.h"
 
 application_t application;
 
@@ -29,18 +31,12 @@ bool application_read_from_nvs()
 {
     esp_err_t err;
     nvs_handle_t handle;
-    uint8_t queue = 0;
-    uint8_t sleep = 0;
-    uint8_t diagnostics = 0;
 
     err = nvs_open("application", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
-        nvs_get_u8(handle, "queue", &queue);
-        application.queue = queue ? true : false;
-        nvs_get_u8(handle, "sleep", &sleep);
-        application.sleep = sleep ? true : false;
-        nvs_get_u8(handle, "diagnostics", &diagnostics);
-        application.diagnostics = diagnostics ? true : false;
+        nvs_get_u8(handle, "queue", (uint8_t *) &(application.queue));
+        nvs_get_u8(handle, "sleep", (uint8_t *) &(application.sleep));
+        nvs_get_u8(handle, "diagnostics", (uint8_t *) &(application.diagnostics));
         nvs_get_u32(handle, "sampling_period", &(application.sampling_period));
         nvs_close(handle);
         ESP_LOGI(__func__, "done");
@@ -60,9 +56,9 @@ bool application_write_to_nvs()
 
     err = nvs_open("application", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
-        ok = ok && !nvs_set_u8(handle, "queue", application.queue ? 1 : 0);
-        ok = ok && !nvs_set_u8(handle, "sleep", application.sleep ? 1 : 0);
-        ok = ok && !nvs_set_u8(handle, "diagnostics", application.diagnostics ? 1 : 0);
+        ok = ok && !nvs_set_u8(handle, "queue", application.queue);
+        ok = ok && !nvs_set_u8(handle, "sleep", application.sleep);
+        ok = ok && !nvs_set_u8(handle, "diagnostics", application.diagnostics);
         ok = ok && !nvs_set_u32(handle, "sampling_period", application.sampling_period);
         ok = ok && !nvs_commit(handle);
         nvs_close(handle);
@@ -73,6 +69,90 @@ bool application_write_to_nvs()
         ESP_LOGI(__func__, "nvs_open failed");
         return false;
     }
+}
+
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "id");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "name");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "version");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "free_heap");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "minimum_free_heap");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "time");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "up_time");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "sampling_period");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM);
+                ok = ok && bp_put_integer(writer, 0);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "queue");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "diagnostics");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "sleep");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool application_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
 }
 
 uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
@@ -142,7 +222,9 @@ uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pac
 
 void application_measure()
 {
-    measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_UpTime, NOW, UNIT_s, esp_timer_get_time() / 1000000L);
-    measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_MinimumFreeHeap, NOW, UNIT_B, esp_get_minimum_free_heap_size());
+    if(application.diagnostics) {
+        measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_UpTime, NOW, UNIT_s, esp_timer_get_time() / 1000000L);
+        measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_MinimumFreeHeap, NOW, UNIT_B, esp_get_minimum_free_heap_size());
+    }
 }
 

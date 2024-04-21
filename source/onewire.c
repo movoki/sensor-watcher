@@ -16,11 +16,13 @@
 #include "onewire_crc.h"
 #include "onewire_device.h"
 
+#include "bigpostman.h"
 #include "board.h"
 #include "devices.h"
 #include "measurements.h"
 #include "now.h"
 #include "onewire.h"
+#include "schema.h"
 #include "wifi.h"
 
 onewire_bus_t onewire_buses[ONEWIRE_BUSES_NUM_MAX] = {{0}};
@@ -93,6 +95,92 @@ bool onewire_write_to_nvs()
     }
 }
 
+bool onewire_put_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_MAP);
+        ok = ok && bp_put_string(writer, "type");
+        ok = ok && bp_put_string(writer, "array");
+        ok = ok && bp_put_string(writer, "items");
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "type");
+            ok = ok && bp_put_string(writer, "object");
+            ok = ok && bp_put_string(writer, "properties");
+            ok = ok && bp_create_container(writer, BP_MAP);
+
+                ok = ok && bp_put_string(writer, "data_pin");
+                ok = ok && bp_create_container(writer, BP_MAP);
+                    ok = ok && bp_put_string(writer, "enum");
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        for(int i = 0; i < GPIO_NUM_MAX; i++)
+                            ok = ok && bp_put_integer(writer, i);
+                    ok = ok && bp_finish_container(writer);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "power_pin");
+                ok = ok && bp_create_container(writer, BP_MAP);
+                    ok = ok && bp_put_string(writer, "enum");
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        ok = ok && bp_put_none(writer);
+                        for(int i = 0; i < GPIO_NUM_MAX; i++)
+                            ok = ok && bp_put_integer(writer, i);
+                    ok = ok && bp_finish_container(writer);
+                ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+static bool write_resource_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_LIST | SCHEMA_MAXIMUM_ELEMENTS);
+        ok = ok && bp_create_container(writer, BP_LIST);
+            ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+            ok = ok && bp_create_container(writer, BP_MAP);
+
+                ok = ok && bp_put_string(writer, "data_pin");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer, GPIO_NUM_MAX - 1);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "power_pin");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
+                    ok = ok && bp_put_integer(writer, 0);
+                    ok = ok && bp_put_integer(writer, GPIO_NUM_MAX - 1);
+                ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_finish_container(writer);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, ONEWIRE_BUSES_NUM_MAX);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool onewire_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET / PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
+        ok = ok && write_resource_schema(writer);                                       // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
+
 uint32_t onewire_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
     bool ok = true;
@@ -101,8 +189,10 @@ uint32_t onewire_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         ok = ok && bp_create_container(writer, BP_LIST);
         for(uint32_t i=0; i != onewire_buses_count && ok; i++) {
             ok = ok && bp_create_container(writer, BP_MAP);
-            ok = ok && bp_put_string(writer, "data_pin") && bp_put_integer(writer, onewire_buses[i].data_pin);
-            ok = ok && bp_put_string(writer, "power_pin") && bp_put_integer(writer, onewire_buses[i].power_pin);
+            ok = ok && bp_put_string(writer, "data_pin");
+            ok = ok && bp_put_integer(writer, onewire_buses[i].data_pin);
+            ok = ok && bp_put_string(writer, "power_pin");
+            ok = ok && (onewire_buses[i].power_pin == 0xFF ? bp_put_none(writer) : bp_put_integer(writer, onewire_buses[i].power_pin));
             ok = ok && bp_finish_container(writer);
         }
         ok = ok && bp_finish_container(writer);
@@ -122,7 +212,7 @@ uint32_t onewire_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
                         if(bp_match(reader, "data_pin"))
                             onewire_buses[onewire_buses_count].data_pin = bp_get_integer(reader);
                         else if(bp_match(reader, "power_pin"))
-                            onewire_buses[onewire_buses_count].power_pin = bp_get_integer(reader);
+                            onewire_buses[onewire_buses_count].power_pin  = bp_is_none(reader) ? 0xFF : bp_get_integer(reader);
                         else bp_next(reader);
                     }
                     bp_close(reader);
@@ -289,9 +379,9 @@ void onewire_detect_devices()
                                 .address = onewire_device.address,
                                 .part = part_index,
                                 .mask = parts[part_index].mask,
-                                .status = true,
-                                .fixed = false,
-                                .updated = -1,
+                                .status = DEVICE_STATUS_WORKING,
+                                .persistent = false,
+                                .timestamp = -1,
                             };
                             int device_index = devices_get_or_append(&device);
                             if(device_index >= 0) {
@@ -327,7 +417,7 @@ bool onewire_measure_device(devices_index_t device)
     }
 
     if(ok)
-        devices[device].updated = NOW;
+        devices[device].timestamp = NOW;
 
     return ok;
 }

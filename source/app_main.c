@@ -41,9 +41,11 @@
 #include "i2c.h"
 #include "logs.h"
 #include "measurements.h"
-#include "onewire.h"
-#include "wifi.h"
+#include "nodes.h"
 #include "now.h"
+#include "onewire.h"
+#include "schema.h"
+#include "wifi.h"
 
 
 #define WIFI_CONNECT_DELAY  10 // seconds
@@ -142,11 +144,22 @@ void serial_flush()
 void serial_send_receive()
 {
     uint8_t byte;
-    while(framer.state == FRAMER_SENDING) {
-        byte = framer_get_byte_to_send(&framer);
-        serial_write_bytes(&byte, 1);
-    }
-    serial_flush();
+    #ifdef USE_USB_CDC
+        uint16_t n = 0;
+        while(framer.state == FRAMER_SENDING && ++n != 512) {
+            byte = framer_get_byte_to_send(&framer);
+            serial_write_bytes(&byte, 1);
+        }
+        serial_flush();
+        if(n == 512)
+            vTaskDelay (60 / portTICK_PERIOD_MS);
+    #else
+        while(framer.state == FRAMER_SENDING) {
+            byte = framer_get_byte_to_send(&framer);
+            serial_write_bytes(&byte, 1);
+        }
+    #endif
+
     while(framer.state == FRAMER_RECEIVING && serial_read_bytes(&byte, 1)) {
         if(framer_put_received_byte(&framer, byte) && framer.length) {
             framer.length = bigpostman_handle_pack(&bigpostman, bigpostman_buffer, framer.length / 4, sizeof(bigpostman_buffer) / 4, 0, NULL, NULL) * 4;
@@ -240,6 +253,7 @@ void app_main(void)
     wifi_init();        // 160 ms
     board_init();
     application_init();
+    nodes_init();
     adc_init();
     i2c_init();
     onewire_init();
@@ -256,20 +270,21 @@ void app_main(void)
 
     framer_set_buffer(&framer, (uint8_t *)bigpostman_buffer, sizeof(bigpostman_buffer));
     bigpostman_init(&bigpostman);
+    bigpostman_register_resource(&bigpostman, "@", &schema_resource_handler);
     bigpostman_register_resource(&bigpostman, "adc", &adc_resource_handler);
     bigpostman_register_resource(&bigpostman, "application", &application_resource_handler);
     bigpostman_register_resource(&bigpostman, "ble", &ble_resource_handler);
     bigpostman_register_resource(&bigpostman, "board", &board_resource_handler);
     bigpostman_register_resource(&bigpostman, "backends", &backends_resource_handler);
     bigpostman_register_resource(&bigpostman, "devices", &devices_resource_handler);
-    bigpostman_register_resource(&bigpostman, "enums", &enums_resource_handler);
     bigpostman_register_resource(&bigpostman, "i2c", &i2c_resource_handler);
     bigpostman_register_resource(&bigpostman, "logs", &logs_resource_handler);
     bigpostman_register_resource(&bigpostman, "measurements", &measurements_resource_handler);
+    bigpostman_register_resource(&bigpostman, "nodes", &nodes_resource_handler);
     bigpostman_register_resource(&bigpostman, "onewire", &onewire_resource_handler);
     bigpostman_register_resource(&bigpostman, "wifi", &wifi_resource_handler);
 
-    application.next_measurement_time += (ble.enabled ? ble.scan_duration * 1000000 : 0);
+    application.next_measurement_time += (ble.receive ? ble.scan_duration * 1000000 : 0);
 
     ESP_LOGI(__func__, "inits ended @ %lli", esp_timer_get_time());
     ESP_LOGI(__func__, "application.next_measurement_time: %lli", application.next_measurement_time);
@@ -301,7 +316,7 @@ void app_main(void)
             ESP_LOGI(__func__, "wifi connection detected");
         }
 
-        if(ble.enabled && !ble_is_scanning() && esp_timer_get_time() + ble.scan_duration * 1000000LL >= application.next_measurement_time) {
+        if(ble.receive && !ble_is_scanning() && esp_timer_get_time() + ble.scan_duration * 1000000LL >= application.next_measurement_time) {
             ble_start_scan();
             ESP_LOGI(__func__, "starting ble scan @ %lli", esp_timer_get_time());
         }
@@ -316,7 +331,7 @@ void app_main(void)
             if(!application.queue)
                 measurements_init();
             measurements_measure();
-            if(ble.enabled) {
+            if(ble.receive) {
                 ble_stop_scan();
                 ESP_LOGI(__func__, "ble_measurements_count: %lu", ble_measurements_count);
                 ble_merge_measurements();
@@ -327,15 +342,23 @@ void app_main(void)
             ESP_LOGI(__func__, "finished measurements @ %lli", esp_timer_get_time());
         }
 
-        if(wifi.status == WIFI_STATUS_ONLINE && measurements_updated && (measurements_count || measurements_full)) {
-            if(application.diagnostics)
-                wifi_measure();
+        if(ble.send && measurements_updated) {
+            ESP_LOGI(__func__, "started sending measurements via BLE @ %lli", esp_timer_get_time());
+            ble_send_measurements();
+            if(!wifi.ssid[0]) {
+                measurements_updated = false;
+                ready_to_sleep = true;
+            }
+            ESP_LOGI(__func__, "finished sending measurements via BLE @ %lli", esp_timer_get_time());
+        }
 
+        if(wifi.status == WIFI_STATUS_ONLINE && measurements_updated && (measurements_count || measurements_full)) {
+            wifi_measure();
             for(uint8_t i = 0; i != BACKENDS_NUM_MAX; i++) {
                 if(backends[i].uri[0] == 0)
                     continue;
 
-                ESP_LOGI(__func__, "started sending measurements @ %lli", esp_timer_get_time());
+                ESP_LOGI(__func__, "started sending measurements via WiFi @ %lli", esp_timer_get_time());
                 switch(backends[i].uri[0]) {
                 case 'h': {     // http / https
                     esp_http_client_config_t config_post = {
@@ -523,7 +546,7 @@ void app_main(void)
                         case BACKEND_FORMAT_TEMPLATE:
                             measurements_entry_to_template_row(index, &buf, backends[i].template_row, backends[i].template_name_separator);
                             break;
-                        case BACKEND_FORMAT_BINARY:
+                        case BACKEND_FORMAT_FRAME:
                             buf.length = sizeof(measurement_frame_t);
                             measurements_entry_to_frame(index, (measurement_frame_t *) buf.data);
                             break;
@@ -549,7 +572,7 @@ void app_main(void)
                     strlcpy(backends[i].message, "Unknown protocol", sizeof(backends[i].message));
                     break;
                 }
-                ESP_LOGI(__func__, "finished sending measurements @ %lli", esp_timer_get_time());
+                ESP_LOGI(__func__, "finished sending measurements via WiFi @ %lli", esp_timer_get_time());
             }
             measurements_updated = false;
             ready_to_sleep = true;
@@ -560,7 +583,7 @@ void app_main(void)
           (ready_to_sleep || (measurements_updated && now - application.last_measurement_time > 10 * 1000000)) &&
           (slept_once || now > 60 * 1000000)) {
             ready_to_sleep = false;
-            int64_t sleep_duration = application.next_measurement_time - now - (ble.enabled ? ble.scan_duration * 1000000 : 0);
+            int64_t sleep_duration = application.next_measurement_time - now - (ble.receive ? ble.scan_duration * 1000000 : 0);
             if(sleep_duration > 0) {
                 slept_once = true;
                 wifi_stop();

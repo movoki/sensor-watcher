@@ -10,15 +10,17 @@
 #include <esp_wifi.h>
 #include <freertos/event_groups.h>
 
-#include "bigpostman.h"
+#include "bigpacks.h"
 
-extern wifi_config_t wifi_config; /// hack
+#define WIFI_SSID_LENGTH		33
+#define WIFI_PASSWORD_LENGTH	64
 
 typedef struct {
-	char ssid[sizeof(wifi_config.sta.ssid)];
-	char password[sizeof(wifi_config.sta.password)];
+	char ssid[WIFI_SSID_LENGTH];
+	char password[WIFI_PASSWORD_LENGTH];
 	uint64_t mac;
 	uint8_t status;
+	bool diagnostics;
 
     esp_netif_t *netif;
 	bool reconnected;
@@ -34,6 +36,7 @@ bool wifi_connect();
 bool wifi_read_from_nvs();
 bool wifi_write_to_nvs();
 void wifi_event_handler(void* handler_args, esp_event_base_t base, int32_t id, void* event_data);
+bool wifi_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 void wifi_measure();
 

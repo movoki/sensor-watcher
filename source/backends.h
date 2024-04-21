@@ -26,7 +26,7 @@
 #define BACKEND_ERROR_MQTT_RETURN_CODE_BASE	0x30000000
 #define BACKEND_ERROR_HTTP_STATUS_BASE		0x40000000
 
-#include "bigpostman.h"
+#include "bigpacks.h"
 
 typedef struct {
 	uint8_t auth;
@@ -66,6 +66,7 @@ void backends_stop();
 void backends_clear_status();
 bool backend_pack(bp_pack_t *writer, uint32_t index);
 bool backend_unpack(bp_pack_t *reader, uint32_t index);
+bool backends_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t backends_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 #endif

@@ -9,6 +9,7 @@
 #include <freertos/task.h>
 
 #include "application.h"
+#include "bigpostman.h"
 #include "ble.h"
 #include "devices.h"
 #include "enums.h"
@@ -16,6 +17,7 @@
 #include "measurements.h"
 #include "now.h"
 #include "onewire.h"
+#include "schema.h"
 
 RTC_DATA_ATTR device_t devices[DEVICES_NUM_MAX] = {{0}};
 RTC_DATA_ATTR devices_index_t devices_count = 0;
@@ -61,19 +63,19 @@ bool devices_read_from_nvs()
     bool ok = true;
     nvs_handle_t handle;
     char nvs_key[16];
-    devices_index_t devices_fixed_count = 0;
+    devices_index_t devices_persistent_count = 0;
     size_t length;
 
     err = nvs_open("devices", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
-        ok = ok && !nvs_get_u8(handle, "count", &devices_fixed_count);
-        ESP_LOGI(__func__, "Fixed devices found in NVS: %i", devices_fixed_count);
-        for(uint8_t i = 0; i < devices_fixed_count && ok; i++) {
+        ok = ok && !nvs_get_u8(handle, "count", &devices_persistent_count);
+        ESP_LOGI(__func__, "Persistent devices found in NVS: %i", devices_persistent_count);
+        for(uint8_t i = 0; i < devices_persistent_count && ok; i++) {
             device_t device = {
                 .rssi = 0,
-                .updated = -1,
-                .status = true,
-                .fixed = true,
+                .timestamp = -1,
+                .status = DEVICE_STATUS_UNSEEN,
+                .persistent = true,
             };
             snprintf(nvs_key, sizeof(nvs_key), "%u_resource", i % 255);
             ok = ok && !nvs_get_u8(handle, nvs_key, &device.resource);
@@ -114,7 +116,7 @@ bool devices_read_from_nvs()
     }
 }
 
-device_address_t hex_to_address(const char* hex)
+static device_address_t hex_to_address(const char* hex)
 {
     uint8_t i, j;
     uint8_t bytes[sizeof(device_address_t)];
@@ -132,12 +134,12 @@ bool devices_write_to_nvs()
     bool ok = true;
     nvs_handle_t handle;
     char nvs_key[16];
-    devices_index_t devices_fixed_count = 0;
+    devices_index_t devices_persistent_count = 0;
 
     err = nvs_open("devices", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
         for(uint8_t i = 0; i < devices_count && ok; i++) {
-            if(devices[i].fixed) {
+            if(devices[i].persistent) {
                 snprintf(nvs_key, sizeof(nvs_key), "%u_resource", i % 255);
                 ok = ok && !nvs_set_u8(handle, nvs_key, devices[i].resource);
                 snprintf(nvs_key, sizeof(nvs_key), "%u_bus", i % 255);
@@ -156,10 +158,10 @@ bool devices_write_to_nvs()
                 snprintf(nvs_key, sizeof(nvs_key), "%u_offsets", i % 255);
                 ok = ok && !nvs_set_blob(handle, nvs_key, devices[i].offsets, sizeof(devices[i].offsets));
 
-                devices_fixed_count += 1;
+                devices_persistent_count += 1;
             }
         }
-        ok = ok && !nvs_set_u8(handle, "count", devices_fixed_count);
+        ok = ok && !nvs_set_u8(handle, "count", devices_persistent_count);
         ok = ok && !nvs_commit(handle);
         nvs_close(handle);
         ESP_LOGI(__func__, "%s", ok ? "done" : "failed");
@@ -256,6 +258,170 @@ int devices_get_or_append(device_t *device)
     return device_index >= 0 ? device_index : devices_append(device);
 }
 
+static bool write_get_response_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);
+            ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+            ok = ok && bp_create_container(writer, BP_MAP);
+
+                ok = ok && bp_put_string(writer, "id");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_IDENTIFIER | SCHEMA_READ_ONLY);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "name");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY | SCHEMA_MAXIMUM_BYTES);
+                    ok = ok && bp_put_integer(writer, DEVICES_NAME_LENGTH);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "persistent");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "status");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY | SCHEMA_VALUES);
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                    for(int i = 0; i < DEVICE_STATUS_NUM_MAX; i++)
+                        ok = ok && bp_put_string(writer, device_status_labels[i]);
+                    ok = ok && bp_finish_container(writer);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "timestamp");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "rssi");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_READ_ONLY);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "mask");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_INTEGER);
+                ok = ok && bp_finish_container(writer);
+
+                ok = ok && bp_put_string(writer, "offsets");
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_LIST);
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        ok = ok && bp_put_integer(writer, SCHEMA_FLOAT);
+                    ok = ok && bp_finish_container(writer);
+                ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_finish_container(writer);
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+static bool write_post_item_request_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "name");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
+                ok = ok && bp_put_integer(writer, DEVICES_NAME_LENGTH);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "persistent");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "mask");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "offsets");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_LIST);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_FLOAT);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+static bool write_put_item_request_schema(bp_pack_t *writer)
+{
+    bool ok = true;
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_put_integer(writer, SCHEMA_MAP);
+        ok = ok && bp_create_container(writer, BP_MAP);
+
+            ok = ok && bp_put_string(writer, "persistent");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "mask");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "offsets");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_LIST);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, SCHEMA_FLOAT);
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+        ok = ok && bp_finish_container(writer);
+    ok = ok && bp_finish_container(writer);
+    return ok;
+}
+
+bool devices_schema_handler(char *resource_name, bp_pack_t *writer)
+{
+    bool ok = true;
+
+    // GET
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                            // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE);                     // Methods
+        ok = ok && write_get_response_schema(writer);                               // Schema
+    ok = ok && bp_finish_container(writer);
+
+    // POST
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                            // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_POST_REQUEST);                     // Methods
+        ok = ok && write_post_item_request_schema(writer);                          // Schema
+    ok = ok && bp_finish_container(writer);
+
+    // PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                            // Path
+            ok = ok && bp_put_string(writer, resource_name);
+            ok = ok && bp_put_none(writer);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_PUT_REQUEST);                      // Methods
+        ok = ok && write_put_item_request_schema(writer);                           // Schema
+    ok = ok && bp_finish_container(writer);
+
+    return ok;
+}
+
 uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
     bool ok = true;
@@ -270,10 +436,16 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
             ok = ok && bp_create_container(writer, BP_MAP);
                 ok = ok && bp_put_string(writer, "id");
                 ok = ok && bp_put_integer(writer, i);
-                ok = ok && bp_put_string(writer, "fixed");
-                ok = ok && bp_put_boolean(writer, devices[i].fixed);
                 ok = ok && bp_put_string(writer, "name");
                 ok = ok && bp_put_string(writer, name);
+                ok = ok && bp_put_string(writer, "persistent");
+                ok = ok && bp_put_boolean(writer, devices[i].persistent);
+                ok = ok && bp_put_string(writer, "status");
+                ok = ok && bp_put_string(writer, device_status_labels[devices[i].status]);
+                ok = ok && bp_put_string(writer, "timestamp");
+                ok = ok && bp_put_big_integer(writer, devices[i].timestamp);
+                ok = ok && bp_put_string(writer, "rssi");
+                ok = ok && bp_put_integer(writer, devices[i].rssi);
                 ok = ok && bp_put_string(writer, "mask");
                 ok = ok && bp_put_integer(writer, (bp_integer_t) devices[i].mask);
                 ok = ok && bp_put_string(writer, "offsets");
@@ -281,13 +453,6 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
                     for(int j = 0; j < parts[devices[i].part].parameters; j++)
                         ok = ok && bp_put_float(writer, (bp_integer_t) devices[i].offsets[j]);
                 ok = ok && bp_finish_container(writer);
-
-                ok = ok && bp_put_string(writer, "rssi");
-                ok = ok && bp_put_integer(writer, devices[i].rssi);
-                ok = ok && bp_put_string(writer, "updated");
-                ok = ok && bp_put_big_integer(writer, devices[i].updated);
-                ok = ok && bp_put_string(writer, "status");
-                ok = ok && bp_put_boolean(writer, devices[i].status);
             ok = ok && bp_finish_container(writer);
         }
         ok = ok && bp_finish_container(writer);
@@ -298,17 +463,17 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
                 return PM_400_Bad_Request;
 
         device_t device = {
-            .status = true,
-            .updated = -1,
+            .status = DEVICE_STATUS_UNSEEN,
+            .timestamp = -1,
         };
 
         while(ok && bp_next(reader)) {
             if(bp_match(reader, "name")) {
                 bp_get_string(reader, name, sizeof(name) / sizeof(bp_type_t));
-                devices_parse_name(name, &device, '_');
+                ok = ok && devices_parse_name(name, &device, '_');
             }
-            else if(bp_match(reader, "fixed"))
-                device.fixed = bp_get_boolean(reader);
+            else if(bp_match(reader, "persistent"))
+                device.persistent = bp_get_boolean(reader);
             else if(bp_match(reader, "mask"))
                 device.mask = bp_get_integer(reader);
             else if(bp_match(reader, "offsets")) {
@@ -322,7 +487,7 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         }
         bp_close(reader);
 
-        if(!device.resource || !device.address || !device.part)  /// there are valid zero addresses?
+        if(!ok || !device.resource || !device.address || !device.part)  /// there are valid zero addresses?
             return PM_400_Bad_Request;
 
         return devices_append(&device) >= 0 && devices_write_to_nvs() ? PM_201_Created : PM_500_Internal_Server_Error;
@@ -334,8 +499,8 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
                 return PM_400_Bad_Request;
 
         while(bp_next(reader)) {
-            if(bp_match(reader, "fixed"))
-                devices[index].fixed = bp_get_boolean(reader);
+            if(bp_match(reader, "persistent"))
+                devices[index].persistent = bp_get_boolean(reader);
             else if(bp_match(reader, "mask"))
                 devices[index].mask = bp_get_integer(reader);
             else if(bp_match(reader, "offsets")) {
@@ -390,12 +555,12 @@ bool devices_measure_all()
     for(device = 0; device < devices_count; device++) {
         switch(devices[device].resource) {
         case RESOURCE_I2C:
-            devices[device].status = i2c_measure_device(device);
-            ok = ok && devices[device].status;
+            devices[device].status = i2c_measure_device(device) ? DEVICE_STATUS_WORKING : DEVICE_STATUS_ERROR;
+            ok = ok && devices[device].status == DEVICE_STATUS_WORKING;
             break;
         case RESOURCE_ONEWIRE:
-            devices[device].status = onewire_measure_device(device);
-            ok = ok && devices[device].status;
+            devices[device].status = onewire_measure_device(device) ? DEVICE_STATUS_WORKING : DEVICE_STATUS_ERROR;
+            ok = ok && devices[device].status == DEVICE_STATUS_WORKING;
             break;
         default:
             break;

@@ -11,6 +11,7 @@ uint32_t enums_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
 enum board_model {
 	BOARD_MODEL_NONE = 0,
 	BOARD_MODEL_GENERIC_ESP32,
+	BOARD_MODEL_GENERIC_ESP32_S3,
 	BOARD_MODEL_M5STACK_ATOM_LITE,
 	BOARD_MODEL_M5STACK_ATOM_MATRIX,
 	BOARD_MODEL_M5STACK_ATOM_ECHO,
@@ -75,11 +76,19 @@ enum backend_format {
 	BACKEND_FORMAT_SENML = 0,
 	BACKEND_FORMAT_BIGPOSTMAN,
 	BACKEND_FORMAT_TEMPLATE,
-	BACKEND_FORMAT_BINARY,
+	BACKEND_FORMAT_FRAME,
 	BACKEND_FORMAT_NUM_MAX
 };
 extern const char *backend_format_labels[];
 typedef enum backend_format backend_format_t;
+
+enum device_status {
+	DEVICE_STATUS_WORKING = 0,
+	DEVICE_STATUS_ERROR,
+	DEVICE_STATUS_UNSEEN,
+	DEVICE_STATUS_NUM_MAX
+};
+extern const char *device_status_labels[];
 
 enum part {
 	PART_NONE = 0,

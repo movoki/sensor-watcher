@@ -4,8 +4,11 @@
 #ifndef devices_h
 #define devices_h
 
+#include <time.h>
+#include <stddef.h>
+
 #include "enums.h"
-#include "bigpostman.h"
+#include "bigpacks.h"
 
 #define DEVICES_NUM_MAX 			64
 #define DEVICES_PARAMETERS_NUM_MAX	9		// For RuuviTags
@@ -19,6 +22,7 @@ typedef uint8_t  device_bus_t;
 typedef uint8_t  device_multiplexer_t;
 typedef uint8_t  device_channel_t;
 typedef uint8_t  device_parameter_t;
+typedef uint8_t  device_status_t;
 typedef int8_t   device_rssi_t;
 
 typedef struct {
@@ -34,8 +38,8 @@ extern const part_t parts[];
 
 typedef struct {
 	device_address_t  	  address;
-	time_t    	      	  updated;
-	float     	          offsets[DEVICES_PARAMETERS_NUM_MAX];  /// reduce to 1/2 using 8.8 fixed point?
+	time_t    	      	  timestamp;
+	float     	          offsets[DEVICES_PARAMETERS_NUM_MAX];
 	device_mask_t  	      mask;
 	device_part_t     	  part;
 	resource_t			  resource;
@@ -43,14 +47,13 @@ typedef struct {
 	device_multiplexer_t  multiplexer;
 	device_channel_t   	  channel;
 	device_rssi_t    	  rssi;
-	bool	  	      	  status;
-	bool      	      	  fixed;
+	device_status_t	  	  status;
+	bool      	      	  persistent;
 } device_t;
 
 typedef uint8_t devices_index_t;
 extern device_t devices[];
 extern devices_index_t devices_count;
-extern int64_t devices_first_measurement_time;
 
 void devices_init();
 bool devices_read_from_nvs();
@@ -66,6 +69,7 @@ int devices_get(device_t *device);
 int devices_append(device_t *device);
 int devices_get_or_append(device_t *device);
 
+bool devices_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 void devices_build_name(devices_index_t device, char *name, size_t name_size, char separator);
 

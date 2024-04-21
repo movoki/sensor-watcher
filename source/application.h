@@ -6,7 +6,7 @@
 
 #define APP_ID         "com.movoki.sensor_watcher"
 #define APP_NAME       "SensorWatcher"
-#define APP_VERSION    0x0006
+#define APP_VERSION    0x0007
 
 #include "bigpacks.h"
 
@@ -26,6 +26,7 @@ bool application_read_from_nvs();
 bool application_write_to_nvs();
 bool application_verify_license();
 void application_measure();
+bool application_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 #endif
