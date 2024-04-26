@@ -86,17 +86,28 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 
 - Download and install ESP-IDF 5.2 https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/linux-macos-setup.html
 - Go to the esp32 or esp32s3 folder in this project, depending on what device you have, and run 'idf.py flash'.
-- Then go to the tools folder in this project and use bigpostman-cli.py to configure the firmware.
+- Then go to the tools folder in this project and use sensorwatcher-cli.py to configure the firmware.
+
 
 # Community resources
 
 - [Telegram group](https://t.me/SensorWatcher).
 
+
 # License
 
 Most of the code is released under the GPL-3 license. Some libraries are under the MIT license.
 
+
 # ChangeLog
+
+## 0.8
+
+- Added support for ESP32-C3 and Xiao ESP32C3.
+
+- Use the hardware USB Serial JTAG when available instead of TinyUSB.
+
+- Use a single buffer istead of two for HTTP requests and responses.
 
 ## 0.7
 
@@ -121,7 +132,6 @@ Most of the code is released under the GPL-3 license. Some libraries are under t
 - Renamed "fixed" in devices to "persistent".
 
 - Devices status is now a string instead of a boolean.
-
 
 ## 0.6
 

@@ -10,7 +10,7 @@
 #include <driver/temperature_sensor.h>
 
 #include "application.h"
-#include "bigpostman.h"
+#include "postman.h"
 #include "board.h"
 #include "i2c.h"
 #include "devices.h"
@@ -29,6 +29,10 @@ temperature_sensor_handle_t cpu_temp_sensor = NULL;
 
 void board_init()
 {
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    board.processor = chip.model;
+
     board_read_from_nvs();
     esp_log_level_set("*", board.log_level);
     board_configure();
@@ -109,20 +113,13 @@ bool board_write_to_nvs()
     }
 }
 
-char* board_get_processor()
+char* board_get_processor_label()
 {
-    esp_chip_info_t chip;
-    esp_chip_info(&chip);
-
-    switch(chip.model) {
+    switch(board.processor) {
     case CHIP_ESP32:   return "ESP32";
-    // case CHIP_ESP32S2: return "ESP32-S2";
     case CHIP_ESP32S3: return "ESP32-S3";
-    // case CHIP_ESP32C3: return "ESP32-C3";
-    // case CHIP_ESP32H4: return "ESP32-H4";
-    // case CHIP_ESP32C2: return "ESP32-C2";
-    // case CHIP_ESP32C6: return "ESP32-C6";
-    // case CHIP_ESP32H2: return "ESP32-H2";
+    case CHIP_ESP32C3: return "ESP32-C3";
+    case CHIP_ESP32C6: return "ESP32-C6";
     default:           return "";
     }
 }
@@ -156,6 +153,8 @@ static bool write_resource_schema(bp_pack_t *writer)
                 ok = ok && bp_create_container(writer, BP_LIST);
                     ok = ok && bp_put_string(writer, "ESP32");
                     ok = ok && bp_put_string(writer, "ESP32-S3");
+                    ok = ok && bp_put_string(writer, "ESP32-C3");
+                    ok = ok && bp_put_string(writer, "ESP32-C6");
                 ok = ok && bp_finish_container(writer);
             ok = ok && bp_finish_container(writer);
 
@@ -219,7 +218,7 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
         ok = ok && bp_put_string(writer, "id");
         ok = ok && bp_put_string(writer, mac_str);
         ok = ok && bp_put_string(writer, "processor");
-        ok = ok && bp_put_string(writer, board_get_processor());
+        ok = ok && bp_put_string(writer, board_get_processor_label());
         ok = ok && bp_put_string(writer, "flash_size");
         ok = ok && bp_put_integer(writer, board_get_flash_size());
         ok = ok && bp_put_string(writer, "model");

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-#  BigPostman - Copyright (c) 2022 Francisco Castro <http://fran.cc>
+#  Postman - Copyright (c) 2022 Francisco Castro <http://fran.cc>
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
 #  copy of this software and associated documentation files (the "Software"),
@@ -55,17 +55,17 @@ PM_RESPONSE_TEXT = {
     0x4D: "413 Request Entity Too Large",
 }
 
-class BigPostmanError(IOError):
+class PostmanError(IOError):
     pass
 
-class BigPostman:
+class Postman:
     def __init__(self, device, timeout=5):
         self.debug = False
         self.token = 0
         try:
             self.fd = serial.Serial(device, 115200, stopbits=serial.STOPBITS_ONE, parity=serial.PARITY_NONE, timeout=timeout)
         except IOError as err:
-            raise BigPostmanError("Failed to open port: %s" % err)
+            raise PostmanError("Failed to open port: %s" % err)
 
     def send(self, method, token, path, has_payload=False, payload=None):
         frame = bigpacks.pack(method << 24 | token) + bigpacks.pack(path)
@@ -90,13 +90,13 @@ class BigPostman:
                     self.fd.write(byte.to_bytes(1, "little"))
             self.fd.write(b"\x7E")
         except IOError as err:
-            raise BigPostmanError("Frame sending failed: %s" % err)
+            raise PostmanError("Frame sending failed: %s" % err)
 
     def send_null(self):
         try:
             self.fd.write(b"\x7E")
         except  IOError as err:
-            raise BigPostmanError("Frame sending failed: %s" % err)
+            raise PostmanError("Frame sending failed: %s" % err)
 
     def receive(self):
         frame = b""
@@ -105,15 +105,15 @@ class BigPostman:
             while (byte != b"\x7E" or len(frame) == 0):
                 byte = self.fd.read(1)
                 if not byte:
-                    raise BigPostmanError("Frame receiving timed out.")
+                    raise PostmanError("Frame receiving timed out.")
                 if byte == b"\x7D":
                     frame += (self.fd.read(1)[0] | 32).to_bytes(1, "little")
                 elif byte != b"\x7E":
                     frame += byte
-        except BigPostmanError:
+        except PostmanError:
             raise
         except  IOError as err:
-            raise BigPostmanError("Frame receiving failed: %s" % err)
+            raise PostmanError("Frame receiving failed: %s" % err)
 
         if self.debug:
             print("RX:", end='')
@@ -144,13 +144,13 @@ class BigPostman:
 
             return [response_token >> 24, response_token & 0x00FFFFFF, path, payload, timestamp, identifier, signature]
         else:
-            raise BigPostmanError("Frame receiving failed, bad CRC %s != %s " % (hex(crc32.crc32str(frame[:-4])), hex(struct.unpack("<I", frame[-4:])[0])))
+            raise PostmanError("Frame receiving failed, bad CRC %s != %s " % (hex(crc32.crc32str(frame[:-4])), hex(struct.unpack("<I", frame[-4:])[0])))
 
     def get(self, path, query=None):
         self.send(PM_GET, self.token, path, query is not None, query)
         response = self.receive()
         if len(response) > 1 and response[1] != self.token:
-            raise BigPostmanError("Response token does not match request token.")
+            raise PostmanError("Response token does not match request token.")
         self.token = (self.token + 1) & 0xFFFFFFFF
         return response[0:1] + response[3:]
 
@@ -158,7 +158,7 @@ class BigPostman:
         self.send(PM_PUT, self.token, path, data is not None, data)
         response = self.receive()
         if len(response) > 1 and response[1] != self.token:
-            raise BigPostmanError("Response token does not match request token.")
+            raise PostmanError("Response token does not match request token.")
         self.token = (self.token + 1) & 0xFFFFFFFF
         return response[0:1] + response[3:]
 
@@ -166,7 +166,7 @@ class BigPostman:
         self.send(PM_POST, self.token, path, data is not None, data)
         response = self.receive()
         if len(response) > 1 and response[1] != self.token:
-            raise BigPostmanError("Response token does not match request token.")
+            raise PostmanError("Response token does not match request token.")
         self.token = (self.token + 1) & 0xFFFFFFFF
         return response[0:1] + response[3:]
 
@@ -174,6 +174,6 @@ class BigPostman:
         self.send(PM_DELETE, self.token, path, query is not None, query)
         response = self.receive()
         if len(response) > 1 and response[1] != self.token:
-            raise BigPostmanError("Response token does not match request token.")
+            raise PostmanError("Response token does not match request token.")
         self.token = (self.token + 1) & 0xFFFFFFFF
         return response[0:1] + response[3:]

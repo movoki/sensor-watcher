@@ -10,25 +10,22 @@
 #include <esp_sntp.h>
 #include <nvs_flash.h>
 #include <driver/uart.h>
-
-#ifdef CONFIG_IDF_TARGET_ESP32S3
-#define USE_USB_CDC true
-#endif
-
-#ifdef USE_USB_CDC
-#include <tinyusb.h>
-#include <tusb_cdc_acm.h>
-#endif
-
 #include <esp_tls.h>
 #include <esp_crt_bundle.h>
 #include <esp_http_client.h>
 #include <mqtt_client.h>
 
-#include "yuarel.h"
-
-#include "framer.h"
-#include "bigpostman.h"
+#if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C6) || defined(CONFIG_IDF_TARGET_ESP32S3)
+    #define USE_USB_SERIAL_JTAG
+#endif
+#ifdef USE_USB_SERIAL_JTAG
+    #include <driver/usb_serial_jtag.h>
+    #include <hal/usb_serial_jtag_ll.h>
+#endif
+#ifdef USE_TINYUSB
+    #include <tinyusb.h>
+    #include <tusb_cdc_acm.h>
+#endif
 
 #include "adc.h"
 #include "application.h"
@@ -37,6 +34,7 @@
 #include "backends.h"
 #include "devices.h"
 #include "enums.h"
+#include "framer.h"
 #include "httpdate.h"
 #include "i2c.h"
 #include "logs.h"
@@ -44,26 +42,25 @@
 #include "nodes.h"
 #include "now.h"
 #include "onewire.h"
+#include "postman.h"
 #include "schema.h"
 #include "wifi.h"
+#include "yuarel.h"
 
-
-#define WIFI_CONNECT_DELAY  10 // seconds
-#define SNTP_SYNC_DELAY     30 // seconds
-
-#define BIGPOSTMAN_PACKET_LENGTH_MAX   (9 * 1024)          // 9KB, to fit a full packed backend_t plus headers
-#define UART_BUFFER_SIZE    BIGPOSTMAN_PACKET_LENGTH_MAX   // To contain a full 'put backends/x' and avoid byte losses when busy HTTPing
-#define UART_NUMBER         UART_NUM_0
+#define POSTMAN_PACKET_LENGTH_MAX       (9 * 1024)                      // To fit a full packed backend_t plus headers
+#define UART_BUFFER_SIZE                POSTMAN_PACKET_LENGTH_MAX
+#define UART_NUMBER                     UART_NUM_0
+#define USB_SERIAL_JTAG_BUFFER_SIZE     1024
 
 framer_t framer;
-bigpostman_t bigpostman;
+postman_t postman;
+
+uint32_t postman_buffer[POSTMAN_PACKET_LENGTH_MAX / 4];
+
+size_t backend_buffer_length = 0;
+alignas(4) char backend_buffer[POSTMAN_PACKET_LENGTH_MAX];
 
 time_t http_timestamp = 0;
-size_t http_response_length = 0;
-alignas(4) uint8_t http_response_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX];
-uint32_t bigpostman_buffer[BIGPOSTMAN_PACKET_LENGTH_MAX / 4];
-char backend_buffer[9 * 1024];      // 9 KB, enough for 64 measurements coded as Postman
-
 
 bool sntp_started = false;
 extern bool backends_started;
@@ -82,7 +79,7 @@ void nvs_init()
 void serial_init()
 {
     esp_err_t err = ESP_OK;
-#ifdef USE_USB_CDC
+#if defined(USE_TINYUSB)
     const tinyusb_config_t tusb_cfg = {
         .device_descriptor = NULL,
         .string_descriptor = NULL,
@@ -101,6 +98,13 @@ void serial_init()
 
     err = err ? err : tinyusb_driver_install(&tusb_cfg);
     err = err ? err : tusb_cdc_acm_init(&acm_cfg);
+#elif defined(USE_USB_SERIAL_JTAG)
+    usb_serial_jtag_driver_config_t usb_serial_jtag_config = {
+        .rx_buffer_size = USB_SERIAL_JTAG_BUFFER_SIZE,
+        .tx_buffer_size = USB_SERIAL_JTAG_BUFFER_SIZE,
+    };
+
+    err = err ? err : usb_serial_jtag_driver_install(&usb_serial_jtag_config);
 #else
     uart_config_t config = {
         .baud_rate = 115200,
@@ -118,8 +122,10 @@ void serial_init()
 
 int serial_write_bytes(uint8_t *bytes, size_t length)
 {
-#ifdef USE_USB_CDC
+#if defined(USE_TINYUSB)
     return tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, bytes, length);
+#elif defined(USE_USB_SERIAL_JTAG)
+    return usb_serial_jtag_write_bytes((const char *) bytes, length, 0);
 #else
     return uart_write_bytes(0, bytes, length);
 #endif
@@ -127,8 +133,10 @@ int serial_write_bytes(uint8_t *bytes, size_t length)
 
 int serial_read_bytes(uint8_t *bytes, size_t length)
 {
-#ifdef USE_USB_CDC
+#if defined(USE_TINYUSB)
     return tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, bytes, length, &length) == ESP_OK ? length : 0;
+#elif defined(USE_USB_SERIAL_JTAG)
+    return usb_serial_jtag_read_bytes(bytes, length, 0);
 #else
     return uart_read_bytes(0, bytes, length, 0);
 #endif
@@ -136,23 +144,32 @@ int serial_read_bytes(uint8_t *bytes, size_t length)
 
 void serial_flush()
 {
-#ifdef USE_USB_CDC
+#if defined(USE_TINYUSB)
     tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+#elif defined(USE_USB_SERIAL_JTAG)
+    usb_serial_jtag_ll_txfifo_flush();
 #endif
 }
 
 void serial_send_receive()
 {
     uint8_t byte;
-    #ifdef USE_USB_CDC
-        uint16_t n = 0;
-        while(framer.state == FRAMER_SENDING && ++n != 512) {
+
+    #if defined(USE_TINYUSB)
+        int n;
+        for(n = 0; framer.state == FRAMER_SENDING && n < 512; n++) {
             byte = framer_get_byte_to_send(&framer);
             serial_write_bytes(&byte, 1);
         }
         serial_flush();
         if(n == 512)
-            vTaskDelay (60 / portTICK_PERIOD_MS);
+            vTaskDelay(60 / portTICK_PERIOD_MS);
+    #elif defined(USE_USB_SERIAL_JTAG)
+        for(int n = 0; framer.state == FRAMER_SENDING && n < USB_SERIAL_JTAG_BUFFER_SIZE; n++) {
+            byte = framer_get_byte_to_send(&framer);
+            serial_write_bytes(&byte, 1);
+        }
+        serial_flush();
     #else
         while(framer.state == FRAMER_SENDING) {
             byte = framer_get_byte_to_send(&framer);
@@ -162,21 +179,22 @@ void serial_send_receive()
 
     while(framer.state == FRAMER_RECEIVING && serial_read_bytes(&byte, 1)) {
         if(framer_put_received_byte(&framer, byte) && framer.length) {
-            framer.length = bigpostman_handle_pack(&bigpostman, bigpostman_buffer, framer.length / 4, sizeof(bigpostman_buffer) / 4, 0, NULL, NULL) * 4;
+            framer.length = postman_handle_pack(&postman, postman_buffer, framer.length / 4, sizeof(postman_buffer) / 4, 0, NULL, NULL) * 4;
             framer_set_state(&framer, FRAMER_SENDING);
             break;
         }
     }
 }
 
+#ifndef MIN
 #define MIN(a,b) (((a)<(b))?(a):(b))
+#endif
 
 esp_err_t http_event_handler(esp_http_client_event_t *event)
 {
     switch(event->event_id) {
         case HTTP_EVENT_ON_CONNECTED:
-             http_response_length = 0;
-             http_response_buffer[0] = 0;
+             backend_buffer_length = 0;
              break;
         case HTTP_EVENT_ON_HEADER:
             if(!strncmp(event->header_key, "Date", 5))
@@ -184,11 +202,10 @@ esp_err_t http_event_handler(esp_http_client_event_t *event)
             break;
         case HTTP_EVENT_ON_DATA:
             if (!esp_http_client_is_chunked_response(event->client)) {
-                size_t copy_len = MIN(event->data_len, (sizeof(http_response_buffer) - 1 - http_response_length));
+                size_t copy_len = MIN(event->data_len, (sizeof(backend_buffer) - 1 - backend_buffer_length));
                 if(copy_len)
-                    memcpy(http_response_buffer + http_response_length, event->data, copy_len);
-                http_response_length += copy_len;
-                http_response_buffer[http_response_length] = 0;
+                    memcpy(backend_buffer + backend_buffer_length, event->data, copy_len);
+                backend_buffer_length += copy_len;
             }
             break;
         default:
@@ -200,19 +217,19 @@ esp_err_t http_event_handler(esp_http_client_event_t *event)
 size_t encode_measurements(uint8_t backend_index)
 {
     bool ok = true;
-    size_t backend_buffer_length = sizeof(backend_buffer);
+    size_t length = sizeof(backend_buffer);
 
     switch(backends[backend_index].format) {
         case BACKEND_FORMAT_SENML:
-            ok = ok && measurements_to_senml(backend_buffer, &backend_buffer_length);
+            ok = ok && measurements_to_senml(backend_buffer, &length);
             break;
-        case BACKEND_FORMAT_BIGPOSTMAN:
-            ok = ok && measurements_to_bigpostman(backend_buffer, &backend_buffer_length,
-                backends[backend_index].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[backend_index].user : NULL,
-                backends[backend_index].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[backend_index].key : NULL);
+        case BACKEND_FORMAT_POSTMAN:
+            ok = ok && measurements_to_postman(backend_buffer, &length,
+                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].user : NULL,
+                backends[backend_index].auth == BACKEND_AUTH_POSTMAN ? backends[backend_index].key : NULL);
             break;
         case BACKEND_FORMAT_TEMPLATE:
-            ok = ok && measurements_to_template(backend_buffer, &backend_buffer_length,
+            ok = ok && measurements_to_template(backend_buffer, &length,
                 backends[backend_index].template_header, backends[backend_index].template_row,
                 backends[backend_index].template_row_separator, backends[backend_index].template_name_separator,
                 backends[backend_index].template_footer);
@@ -221,18 +238,18 @@ size_t encode_measurements(uint8_t backend_index)
             ok = false;
     }
 
-    ESP_LOGI(__func__, "backend buffer length / size: %u / %u", backend_buffer_length, sizeof(backend_buffer));
+    ESP_LOGI(__func__, "backend buffer length / size: %u / %u", length, sizeof(backend_buffer));
 
-    if(!ok && !backend_buffer_length)
+    if(!ok && !length)
         ESP_LOGE(__func__, "backend buffer overflow!");
 
     if(!ok) {
         backends[backend_index].status = BACKEND_STATUS_ERROR;
         backends[backend_index].error = 0x201; // Serialization failed
         backends[backend_index].message[0] = 0;
-        backend_buffer_length = 0;
+        length = 0;
     }
-    return backend_buffer_length;
+    return length;
 }
 
 void app_main(void)
@@ -268,21 +285,21 @@ void app_main(void)
         ESP_LOGI(__func__, "devices_init ended @ %lli", esp_timer_get_time());
     }
 
-    framer_set_buffer(&framer, (uint8_t *)bigpostman_buffer, sizeof(bigpostman_buffer));
-    bigpostman_init(&bigpostman);
-    bigpostman_register_resource(&bigpostman, "@", &schema_resource_handler);
-    bigpostman_register_resource(&bigpostman, "adc", &adc_resource_handler);
-    bigpostman_register_resource(&bigpostman, "application", &application_resource_handler);
-    bigpostman_register_resource(&bigpostman, "ble", &ble_resource_handler);
-    bigpostman_register_resource(&bigpostman, "board", &board_resource_handler);
-    bigpostman_register_resource(&bigpostman, "backends", &backends_resource_handler);
-    bigpostman_register_resource(&bigpostman, "devices", &devices_resource_handler);
-    bigpostman_register_resource(&bigpostman, "i2c", &i2c_resource_handler);
-    bigpostman_register_resource(&bigpostman, "logs", &logs_resource_handler);
-    bigpostman_register_resource(&bigpostman, "measurements", &measurements_resource_handler);
-    bigpostman_register_resource(&bigpostman, "nodes", &nodes_resource_handler);
-    bigpostman_register_resource(&bigpostman, "onewire", &onewire_resource_handler);
-    bigpostman_register_resource(&bigpostman, "wifi", &wifi_resource_handler);
+    framer_set_buffer(&framer, (uint8_t *)postman_buffer, sizeof(postman_buffer));
+    postman_init(&postman);
+    postman_register_resource(&postman, "@", &schema_resource_handler);
+    postman_register_resource(&postman, "adc", &adc_resource_handler);
+    postman_register_resource(&postman, "application", &application_resource_handler);
+    postman_register_resource(&postman, "ble", &ble_resource_handler);
+    postman_register_resource(&postman, "board", &board_resource_handler);
+    postman_register_resource(&postman, "backends", &backends_resource_handler);
+    postman_register_resource(&postman, "devices", &devices_resource_handler);
+    postman_register_resource(&postman, "i2c", &i2c_resource_handler);
+    postman_register_resource(&postman, "logs", &logs_resource_handler);
+    postman_register_resource(&postman, "measurements", &measurements_resource_handler);
+    postman_register_resource(&postman, "nodes", &nodes_resource_handler);
+    postman_register_resource(&postman, "onewire", &onewire_resource_handler);
+    postman_register_resource(&postman, "wifi", &wifi_resource_handler);
 
     application.next_measurement_time += (ble.receive ? ble.scan_duration * 1000000 : 0);
 
@@ -402,10 +419,9 @@ void app_main(void)
                             break;
                     }
 
-                    if(!NOW && (backends[i].auth == BACKEND_AUTH_BIGPOSTMAN || strstr(backends[i].template_row, "@t"))) {
+                    if(!NOW && (backends[i].auth == BACKEND_AUTH_POSTMAN || strstr(backends[i].template_row, "@t"))) {
                         http_timestamp = 0;
-                        http_response_length = 0;
-                        http_response_buffer[0] = 0;
+                        backend_buffer_length = 0;
                         esp_http_client_set_method(client, HTTP_METHOD_HEAD);
                         err = esp_http_client_perform(client);
                         if(err == ESP_OK) {
@@ -427,37 +443,38 @@ void app_main(void)
                         switch(backends[i].format) {
                             case BACKEND_FORMAT_SENML:
                                 esp_http_client_set_header(client, "Content-Type", "application/json"); break;
-                            case BACKEND_FORMAT_BIGPOSTMAN:
-                                esp_http_client_set_header(client, "Content-Type", "application/vnd.bigpostman"); break;
+                            case BACKEND_FORMAT_POSTMAN:
+                                esp_http_client_set_header(client, "Content-Type", "application/vnd.postman"); break;
                             case BACKEND_FORMAT_TEMPLATE:
                                 esp_http_client_set_header(client, "Content-Type", "text/plain; charset=utf-8"); break;
                         }
                     }
 
-                    size_t backend_buffer_length = encode_measurements(i);
+                    backend_buffer_length = encode_measurements(i);
                     if(!backend_buffer_length)
                         continue;
 
-                    http_response_length = 0;
-                    http_response_buffer[0] = 0;
                     esp_http_client_set_method(client, HTTP_METHOD_POST);
                     esp_http_client_set_post_field(client, backend_buffer, backend_buffer_length);
 
+                    backend_buffer_length = 0;
                     err = esp_http_client_perform(client);
                     if(err == ESP_OK) {
                         int status = esp_http_client_get_status_code(client);
                         backends[i].status = status < 300 ? BACKEND_STATUS_ONLINE : BACKEND_STATUS_ERROR;
                         backends[i].error = status + BACKEND_ERROR_HTTP_STATUS_BASE;
-                        strlcpy(backends[i].message, (char *)http_response_buffer, sizeof(backends[i].message));
+                        backend_buffer[backend_buffer_length] = 0;
+                        strlcpy(backends[i].message, (char *)backend_buffer, sizeof(backends[i].message));
+
                         if(status >= 300)
-                            ESP_LOGI(__func__, "HTTP Error %i: %s", status, http_response_buffer);
-                        else if(http_response_length && backends[i].format == BACKEND_FORMAT_BIGPOSTMAN && backends[i].auth == BACKEND_AUTH_BIGPOSTMAN) {
+                            ESP_LOGI(__func__, "HTTP Error %i: %s", status, backend_buffer);
+                        else if(backend_buffer_length && backends[i].format == BACKEND_FORMAT_POSTMAN && backends[i].auth == BACKEND_AUTH_POSTMAN) {
                             hmac_sha256_key_t binary_key;
                             if(hmac_hex_decode(binary_key, sizeof(binary_key), backends[i].key, strlen(backends[i].key)) == sizeof(binary_key))
-                                bigpostman_handle_pack(&bigpostman,
-                                    (bp_type_t *) http_response_buffer,
-                                    http_response_length / sizeof(bp_type_t),
-                                    sizeof(http_response_buffer) / sizeof(bp_type_t),
+                                postman_handle_pack(&postman,
+                                    (bp_type_t *) backend_buffer,
+                                    backend_buffer_length / sizeof(bp_type_t),
+                                    sizeof(backend_buffer) / sizeof(bp_type_t),
                                     NOW, backends[i].user, binary_key);
                             else
                                 ESP_LOGI(__func__, "HMAC key is not 64 bytes long");
@@ -472,7 +489,6 @@ void app_main(void)
                     break;
                 }
                 case 'm':   // mqtt / mqtts
-                    size_t backend_buffer_length;
                     if(backends_started && (backend_buffer_length = encode_measurements(i)) != 0) {
                         err = esp_mqtt_client_publish(backends[i].handle, backends[i].output_topic, backend_buffer, backend_buffer_length, 0, 0);
                         backends[i].status = err < 0 ? BACKEND_STATUS_ERROR : BACKEND_STATUS_ONLINE;
@@ -537,11 +553,11 @@ void app_main(void)
                         case BACKEND_FORMAT_SENML:
                             measurements_entry_to_senml_row(index, &buf);
                             break;
-                        case BACKEND_FORMAT_BIGPOSTMAN:
+                        case BACKEND_FORMAT_POSTMAN:
                             buf.length = buf.size;
-                            measurements_entry_to_bigpostman(index, buf.data, &buf.length,
-                                backends[i].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[i].user : NULL,
-                                backends[i].auth == BACKEND_AUTH_BIGPOSTMAN ? backends[i].key : NULL);
+                            measurements_entry_to_postman(index, buf.data, &buf.length,
+                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].user : NULL,
+                                backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].key : NULL);
                             break;
                         case BACKEND_FORMAT_TEMPLATE:
                             measurements_entry_to_template_row(index, &buf, backends[i].template_row, backends[i].template_name_separator);
@@ -596,7 +612,7 @@ void app_main(void)
             }
         }
 
-        vTaskDelay (10 / portTICK_PERIOD_MS);
+        vTaskDelay (20 / portTICK_PERIOD_MS);
     }
 }
 

@@ -16,7 +16,7 @@
 #include "onewire_crc.h"
 #include "onewire_device.h"
 
-#include "bigpostman.h"
+#include "postman.h"
 #include "board.h"
 #include "devices.h"
 #include "measurements.h"
@@ -345,7 +345,12 @@ void onewire_set_default()
         onewire_buses[0].data_pin = 1;
         onewire_buses[0].power_pin = 2;
         break;
-    case BOARD_MODEL_GENERIC_ESP32:
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C3:  // D0 D1
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 2;
+        onewire_buses[0].power_pin = 3;
+        break;
+    case BOARD_MODEL_GENERIC:
     default:
         break;
     }

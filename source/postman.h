@@ -1,8 +1,8 @@
 // Copyright (c) 2022-2023 José Francisco Castro <me@fran.cc>
 // SPDX short identifier: MIT
 
-#ifndef bigpostman_h
-#define bigpostman_h
+#ifndef postman_h
+#define postman_h
 
 #include <string.h>
 #include <time.h>
@@ -44,11 +44,11 @@ typedef struct {
         const char *path;
         handler_t handler;
     } resources[PM_MAX_RESOURCES];
-} bigpostman_t;
+} postman_t;
 
-void bigpostman_init(bigpostman_t *bigpostman);
-bool bigpostman_register_resource(bigpostman_t *bigpostman, const char *path, handler_t handler);
-bp_length_t bigpostman_handle_pack(bigpostman_t *pm, bp_type_t *buffer, bp_length_t length, bp_length_t max_length, time_t now, char *id, hmac_sha256_key_t key);
-bool bigpostman_put_signature(bigpostman_t *pm, time_t now, char *id, hmac_sha256_key_t key);
+void postman_init(postman_t *postman);
+bool postman_register_resource(postman_t *postman, const char *path, handler_t handler);
+bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t length, bp_length_t max_length, time_t now, char *id, hmac_sha256_key_t key);
+bool postman_put_signature(postman_t *pm, time_t now, char *id, hmac_sha256_key_t key);
 
 #endif

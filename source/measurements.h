@@ -60,7 +60,7 @@ extern measurement_t measurements[];
 void measurements_init();
 void measurements_measure();
 bool measurements_entry_to_senml_row(measurements_index_t index, pbuf_t *buf);
-bool measurements_entry_to_bigpostman(measurements_index_t index, char *buffer, size_t *buffer_size, char *id, char *key);
+bool measurements_entry_to_postman(measurements_index_t index, char *buffer, size_t *buffer_size, char *id, char *key);
 bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf, char *template_row, char *template_name_separator);
 bool measurements_entry_to_frame(measurements_index_t index, measurement_frame_t *frame);
 bool measurements_entry_to_adv(measurements_index_t index, measurement_adv_t *adv);
@@ -72,8 +72,7 @@ bool measurements_build_name(pbuf_t *buf, measurements_index_t measurement, char
 bool measurements_pack(bp_pack_t *bp);
 bool measurements_put_signature(bp_pack_t *bp, char *id, char *key);
 bool measurements_to_senml(char *buffer, size_t *buffer_size);
-bool measurements_to_bigpacks(char *buffer, size_t *buffer_size, char *id, char *key);
-bool measurements_to_bigpostman(char *buffer, size_t *buffer_size, char *id, char *key);
+bool measurements_to_postman(char *buffer, size_t *buffer_size, char *id, char *key);
 bool measurements_to_template(char *buffer, size_t *buffer_size, char *template_header, char *template_row, char *template_row_separator, char *template_path_separator, char *template_footer);
 bool measurements_append(node_address_t node,           resource_t resource,   device_bus_t bus,
                          device_multiplexer_t multiplexer,  device_channel_t channel,     device_address_t address,

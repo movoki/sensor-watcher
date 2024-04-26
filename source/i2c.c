@@ -3,15 +3,16 @@
 
 #include <string.h>
 
-#include <esp_log.h>
 #include <esp_check.h>
+#include <esp_chip_info.h>
+#include <esp_log.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
 #include <driver/i2c.h>
 #include <driver/gpio.h>
 
 #include "application.h"
-#include "bigpostman.h"
+#include "postman.h"
 #include "board.h"
 #include "devices.h"
 #include "enums.h"
@@ -368,26 +369,47 @@ void i2c_set_default()
         i2c_buses[0].scl_pin = 40;
         i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
         break;
-    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3:
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3:      // D4 D5
         i2c_buses_count = 1;
         i2c_buses[0].port = 0;
         i2c_buses[0].sda_pin = 5;
         i2c_buses[0].scl_pin = 6;
         i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
         break;
-    case BOARD_MODEL_GENERIC_ESP32:
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C3:      // D4 D5
         i2c_buses_count = 1;
         i2c_buses[0].port = 0;
-        i2c_buses[0].sda_pin = 21;
-        i2c_buses[0].scl_pin = 22;
+        i2c_buses[0].sda_pin = 6;
+        i2c_buses[0].scl_pin = 7;
         i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
         break;
-    case BOARD_MODEL_GENERIC_ESP32_S3:
-        i2c_buses_count = 1;
-        i2c_buses[0].port = 0;
-        i2c_buses[0].sda_pin = 8;
-        i2c_buses[0].scl_pin = 9;
-        i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+    case BOARD_MODEL_GENERIC:
+        switch(board.processor) {
+        case CHIP_ESP32:
+            i2c_buses_count = 1;
+            i2c_buses[0].port = 0;
+            i2c_buses[0].sda_pin = 21;
+            i2c_buses[0].scl_pin = 22;
+            i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+            break;
+        case CHIP_ESP32S3:
+        case CHIP_ESP32C3:
+            i2c_buses_count = 1;
+            i2c_buses[0].port = 0;
+            i2c_buses[0].sda_pin = 8;
+            i2c_buses[0].scl_pin = 9;
+            i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+            break;
+        case CHIP_ESP32C6:
+            i2c_buses_count = 1;
+            i2c_buses[0].port = 0;
+            i2c_buses[0].sda_pin = 23;
+            i2c_buses[0].scl_pin = 22;
+            i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+            break;
+        default:
+            break;
+        }
         break;
     default:
         break;  // Do not enable I2C for unknown boards to avoid burning something connected on those pins! (M5Stack Atom Echo 👀)

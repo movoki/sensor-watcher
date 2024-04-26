@@ -7,6 +7,7 @@
 #include "bigpacks.h"
 
 typedef struct {
+    uint32_t processor;
 	uint32_t model;
 	uint32_t log_level;
 	bool 	 diagnostics;

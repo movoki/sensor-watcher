@@ -12,7 +12,7 @@
 #include <nimble/nimble_port_freertos.h>
 #include <host/ble_gap.h>
 
-#include "bigpostman.h"
+#include "postman.h"
 #include "ble.h"
 #include "devices.h"
 #include "enums.h"

@@ -3,12 +3,11 @@
 
 #include "devices.h"
 #include "enums.h"
-#include "bigpostman.h"
+#include "postman.h"
 
 const char *board_model_labels[] = {
 	[BOARD_MODEL_NONE]	 					"",
-	[BOARD_MODEL_GENERIC_ESP32] 			"generic_esp32",
-	[BOARD_MODEL_GENERIC_ESP32_S3] 			"generic_esp32_s3",
+	[BOARD_MODEL_GENERIC] 					"generic",
 	[BOARD_MODEL_M5STACK_ATOM_LITE] 		"m5stack_atom_lite",
 	[BOARD_MODEL_M5STACK_ATOM_MATRIX] 		"m5stack_atom_matrix",
 	[BOARD_MODEL_M5STACK_ATOM_ECHO] 		"m5stack_atom_echo",
@@ -27,6 +26,7 @@ const char *board_model_labels[] = {
 	[BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_PICO] "adafruit_qt_py_esp32_pico",
 	[BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_S3] 	"adafruit_qt_py_esp32_s3",
 	[BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3] 	"seeedstudio_xiao_esp32s3",
+	[BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C3] 	"seeedstudio_xiao_esp32c3",
 };
 
 const char *resource_labels[] = {
@@ -54,12 +54,12 @@ const char *backend_auth_labels[] = {
 	[BACKEND_AUTH_TOKEN]	"token",
 	[BACKEND_AUTH_HEADER]	"header",
 	[BACKEND_AUTH_X509]		"x509",
-	[BACKEND_AUTH_BIGPOSTMAN]	"bigpostman",
+	[BACKEND_AUTH_POSTMAN]	"postman",
 };
 
 const char *backend_format_labels[] = {
 	[BACKEND_FORMAT_SENML]		"senml",
-	[BACKEND_FORMAT_BIGPOSTMAN]	"bigpostman",
+	[BACKEND_FORMAT_POSTMAN]	"postman",
 	[BACKEND_FORMAT_TEMPLATE]	"template",
 	[BACKEND_FORMAT_FRAME]		"frame",
 };

@@ -1,13 +1,15 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/esp_tinyusb:
-    version: "*"
-    rules:
-      - if: "target in [esp32s2, esp32s3]"
-  espressif/onewire_bus: "^1.0.1"
-  ## Required IDF version
   idf:
     version: ">=5.2.0"
+
+  espressif/onewire_bus: "^1.0.1"
+
+  # espressif/esp_tinyusb:
+  #   version: "*"
+  #   rules:
+  #     - if: "target in [esp32s2, esp32s3]"
+
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

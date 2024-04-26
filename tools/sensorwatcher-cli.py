@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#  BigPostman - Copyright (c) 2012 Francisco Castro <http://fran.cc>
+#  SensorWatcher CLI - Copyright (c) 2024 Francisco Castro <http://fran.cc>
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
 #  copy of this software and associated documentation files (the "Software"),
@@ -23,7 +23,7 @@
 import sys
 import time
 import json
-from bigpostman import *
+from postman import *
 
 class BytesEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -39,11 +39,13 @@ Actions:
                               a JSON file is provided, its content is used as
                               query.
 
-    put <resource> <file>     Puts the content of a JSON file to the specified
-                              resource.
+    put <resource> <filename or JSON string>
+                              Puts the content of a JSON file or JSON string
+                              to the specified resource.
 
-    post <resource> <file>    Posts the content of a JSON file to the
-                              specified resource.
+    post <resource> <filename or JSON string>
+                              Posts the content of a JSON file or JSON string
+                              to the specified resource.
 
     delete <resource> [file]  Deletes the specified resource. If a JSON file
                               is provided, its content is used as query.
@@ -54,7 +56,7 @@ if len(sys.argv) < 2:
     print(usage)
     sys.exit()
 
-pm = BigPostman(sys.argv[1], timeout=10)
+pm = Postman(sys.argv[1], timeout=10)
 pm.debug = False
 time.sleep(1.5)     # workaround for Arduino bootloader bug that eats the first bytes after opening the port
 
@@ -71,20 +73,20 @@ try:
         if action == "get":
             response = pm.get(resource, content)
             if response[0] != PM_205_Content:
-                raise BigPostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
+                raise PostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
             print(json.dumps(response[1], sort_keys=False, indent=4, cls=BytesEncoder))
         elif action == "put" and len(sys.argv) > 4:
             response = pm.put(resource, content)
             if response[0] != PM_204_Changed:
-                raise BigPostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
+                raise PostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
         elif action == "post" and len(sys.argv) > 4:
             response = pm.post(resource, content)
             if response[0] != PM_201_Created:
-                raise BigPostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
+                raise PostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
         elif action == "delete" and len(sys.argv) > 3:
             response = pm.delete(resource, content)
             if response[0] != PM_202_Deleted:
-                raise BigPostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
+                raise PostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
         else:
             print(usage)
             sys.exit()
@@ -93,8 +95,8 @@ try:
         resource = []
         response = pm.get(resource)
         if response[0] != PM_205_Content:
-            raise BigPostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
+            raise PostmanError(PM_RESPONSE_TEXT.get(response[0], hex(response[0])))
         print("Resource index:")
         print(json.dumps(response[1], sort_keys=True, indent=4, cls=BytesEncoder))
-except BigPostmanError as err:
+except PostmanError as err:
     print("Cannot %s the '%s' resource: %s" % (action, resource, err))
