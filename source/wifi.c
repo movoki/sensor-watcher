@@ -10,6 +10,7 @@
 #include <nvs_flash.h>
 
 #include "application.h"
+#include "board.h"
 #include "postman.h"
 #include "enums.h"
 #include "measurements.h"
@@ -33,7 +34,6 @@ void wifi_init()
     wifi.mac = 0;
 
     err = err ? err : (wifi_read_from_nvs() ? ESP_OK : ESP_FAIL);
-
     err = err ? err : esp_netif_init();
     err = err ? err : ((wifi.netif = esp_netif_create_default_wifi_sta()) ? ESP_OK : ESP_FAIL);
     err = err ? err : esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, wifi.netif, NULL);
@@ -42,15 +42,16 @@ void wifi_init()
     err = err ? err : esp_wifi_init(&config);
     err = err ? err : esp_wifi_set_storage(WIFI_STORAGE_FLASH); /// make an option to configure this
     err = err ? err : esp_wifi_set_mode(WIFI_MODE_STA);
-    err = err ? err : esp_wifi_start();
     err = err ? err : esp_read_mac((uint8_t *) &wifi.mac, ESP_MAC_WIFI_STA);
-    // err = err ? err : esp_base_mac_addr_get((uint8_t *) &wifi.mac);
-    err = err ? err : (wifi_connect() ? ESP_OK : ESP_FAIL);
-
-    wifi.mac = __builtin_bswap64(wifi.mac);
-    if((wifi.mac & 0xFFFF) == 0)
-        wifi.mac = (wifi.mac & 0xFFFFFF0000000000) | 0x000000FFFF000000 | ((wifi.mac & 0x000000FFFFFF0000) >> 16);
-
+    if(!err) {
+        wifi.mac = __builtin_bswap64(wifi.mac);
+        if((wifi.mac & 0xFFFF) == 0)
+            wifi.mac = (wifi.mac & 0xFFFFFF0000000000) | 0x000000FFFF000000 | ((wifi.mac & 0x000000FFFFFF0000) >> 16);
+    }
+    if(wifi.ssid[0]) {
+        err = err ? err : esp_wifi_start();
+        err = err ? err : (wifi_connect() ? ESP_OK : ESP_FAIL);
+    }
     ESP_LOGI(__func__, "%s", err ? "failed" : "done");
 }
 
@@ -299,7 +300,8 @@ uint32_t wifi_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wr
             bp_close(reader);
             ok = ok && wifi_write_to_nvs();
             wifi_stop();
-            wifi_start();
+            if(wifi.ssid[0])
+                wifi_start();
             response = ok ? PM_204_Changed : PM_500_Internal_Server_Error;
         }
     }
@@ -313,5 +315,5 @@ void wifi_measure()
 {
     int rssi;
     if(wifi.diagnostics && wifi.status >= WIFI_STATUS_CONNECTED && esp_wifi_sta_get_rssi(&rssi) == ESP_OK)
-        measurements_append(wifi.mac, RESOURCE_WIFI, 0, 0, 0, 0, 0, 0, METRIC_RSSI, NOW, UNIT_dBm, rssi);
+        measurements_append(board.id, RESOURCE_WIFI, 0, 0, 0, 0, 0, 0, METRIC_RSSI, NOW, UNIT_dBm, rssi);
 }

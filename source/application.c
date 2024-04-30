@@ -8,10 +8,11 @@
 #include <nvs_flash.h>
 
 #include "application.h"
-#include "postman.h"
+#include "board.h"
 #include "enums.h"
 #include "measurements.h"
 #include "now.h"
+#include "postman.h"
 #include "schema.h"
 #include "wifi.h"
 
@@ -223,8 +224,8 @@ uint32_t application_resource_handler(uint32_t method, bp_pack_t *reader, bp_pac
 void application_measure()
 {
     if(application.diagnostics) {
-        measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_UpTime, NOW, UNIT_s, esp_timer_get_time() / 1000000L);
-        measurements_append(wifi.mac, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_MinimumFreeHeap, NOW, UNIT_B, esp_get_minimum_free_heap_size());
+        measurements_append(board.id, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_UpTime, NOW, UNIT_s, esp_timer_get_time() / 1000000L);
+        measurements_append(board.id, RESOURCE_APPLICATION, 0, 0, 0, 0, 0, 0, METRIC_MinimumFreeHeap, NOW, UNIT_B, esp_get_minimum_free_heap_size());
     }
 }
 

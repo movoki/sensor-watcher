@@ -15,13 +15,13 @@
 #include "schema.h"
 
 backend_t backends[BACKENDS_NUM_MAX];
-bool backends_modified;
 bool backends_started;
+uint8_t backends_modified;
 
 void backends_init()
 {
-    backends_modified = false;
     backends_started = false;
+    backends_modified = 0;
     memset(backends, 0, sizeof(backends));
     backends_read_from_nvs();
 }
@@ -371,7 +371,7 @@ uint32_t backends_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t
             ok = ok && backend_unpack(reader, index);
 
         if(ok) {
-            backends_modified = true;   // to force sending to HTTP backends for status update
+            backends_modified |= 1 << index;   // to force sending to HTTP backends for status update
             backends_start();
             return backends_write_to_nvs() ? PM_204_Changed : PM_500_Internal_Server_Error;
         }

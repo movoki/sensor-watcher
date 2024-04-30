@@ -22,7 +22,7 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 - M5Stack Station-BAT
 - M5Stack Station-RS485
 - M5Stack Tough
-- Generic ESP32 board
+- Generic ESP32 boards
 
 ## ESP32-S3
 
@@ -30,7 +30,12 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 - Adafruit QT Py ESP32-S3
 - M5Stack AtomS3 Lite
 - SeeedStudio Xiao ESP32S3
-- Generic ESP32-S3 board
+- Generic ESP32-S3 boards
+
+## ESP32-C3
+
+- SeeedStudio Xiao ESP32C3
+- Generic ESP32-C3 boards
 
 ## I2C
 
@@ -101,13 +106,21 @@ Most of the code is released under the GPL-3 license. Some libraries are under t
 
 # ChangeLog
 
+## 0.9
+
+- Added support for extended and long-range BLE advertisements for chips that support BT5.
+
+- Changed the format for BT4 node advertisements. If you are using SensorWatcher as BLE nodes with previous releases, please upgrade both sensor and gateway nodes to this release at the same time.
+
+- Do not start the WiFi driver if the SSID is not set. For BLE-only use cases.
+
 ## 0.8
 
 - Added support for ESP32-C3 and Xiao ESP32C3.
 
 - Use the hardware USB Serial JTAG when available instead of TinyUSB.
 
-- Use a single buffer istead of two for HTTP requests and responses.
+- Use a single buffer instead of two for HTTP requests and responses.
 
 ## 0.7
 

@@ -10,6 +10,7 @@
 
 #include "adc.h"
 #include "application.h"
+#include "board.h"
 #include "enums.h"
 #include "measurements.h"
 #include "now.h"
@@ -253,10 +254,10 @@ bool adc_measure()
                 ok = ok && adc_oneshot_read(handle, channel, &adc_raw) == ESP_OK;
                 if(cali_handle != NULL) {
                     ok = ok && adc_cali_raw_to_voltage(cali_handle, adc_raw, &voltage);
-                    measurements_append(wifi.mac, RESOURCE_ADC, 0, 0, 0, 0, 0, gpio, METRIC_DCvoltage, NOW, UNIT_V, voltage * adc.multiplier / 1000.0);
+                    measurements_append(board.id, RESOURCE_ADC, 0, 0, 0, 0, 0, gpio, METRIC_DCvoltage, NOW, UNIT_V, voltage * adc.multiplier / 1000.0);
                 }
                 else
-                    measurements_append(wifi.mac, RESOURCE_ADC, 0, 0, 0, 0, 0, gpio, METRIC_ADCvalue, NOW, UNIT_NONE, adc_raw);
+                    measurements_append(board.id, RESOURCE_ADC, 0, 0, 0, 0, 0, gpio, METRIC_ADCvalue, NOW, UNIT_NONE, adc_raw);
             }
         }
 

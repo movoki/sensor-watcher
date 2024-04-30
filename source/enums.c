@@ -64,6 +64,12 @@ const char *backend_format_labels[] = {
 	[BACKEND_FORMAT_FRAME]		"frame",
 };
 
+const char *ble_mode_labels[] = {
+	[BLE_MODE_LEGACY]		"legacy",
+	[BLE_MODE_EXTENDED]		"extended",
+	[BLE_MODE_LONG_RANGE]	"long_range",
+};
+
 const char *device_status_labels[] = {
 	[DEVICE_STATUS_WORKING]	"working",
 	[DEVICE_STATUS_ERROR]	"error",

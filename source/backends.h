@@ -55,8 +55,8 @@ typedef struct {
 
 
 extern backend_t backends[];
-extern bool backends_modified;
 extern bool backends_started;
+extern uint8_t backends_modified;
 
 void backends_init();
 bool backends_read_from_nvs();

@@ -1,6 +1,7 @@
 // Copyright (c) 2024 José Francisco Castro <me@fran.cc>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <esp_mac.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <esp_chip_info.h>
@@ -32,6 +33,11 @@ void board_init()
     esp_chip_info_t chip;
     esp_chip_info(&chip);
     board.processor = chip.model;
+
+    esp_base_mac_addr_get((uint8_t *) &board.id);
+    board.id = __builtin_bswap64(board.id);
+    if((board.id & 0xFFFF) == 0)
+        board.id = (board.id & 0xFFFFFF0000000000) | 0x000000FFFF000000 | ((board.id & 0x000000FFFFFF0000) >> 16);
 
     board_read_from_nvs();
     esp_log_level_set("*", board.log_level);
@@ -212,11 +218,11 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
     uint32_t response = 0;
 
     if(method == PM_GET) {
-        char mac_str[17];
-        snprintf(mac_str, sizeof(mac_str), "%016llX", wifi.mac);
+        char id_string[17];
+        snprintf(id_string, sizeof(id_string), "%016llX", board.id);
         ok = ok && bp_create_container(writer, BP_MAP);
         ok = ok && bp_put_string(writer, "id");
-        ok = ok && bp_put_string(writer, mac_str);
+        ok = ok && bp_put_string(writer, id_string);
         ok = ok && bp_put_string(writer, "processor");
         ok = ok && bp_put_string(writer, board_get_processor_label());
         ok = ok && bp_put_string(writer, "flash_size");
@@ -274,7 +280,7 @@ void board_measure()
     #if defined (CONFIG_IDF_TARGET_ESP32S2) || defined (CONFIG_IDF_TARGET_ESP32S3) || defined (CONFIG_IDF_TARGET_ESP32C2) || defined (CONFIG_IDF_TARGET_ESP32C3) || defined (CONFIG_IDF_TARGET_ESP32C6) || defined (CONFIG_IDF_TARGET_ESP32H2)
         float cpu_temp;
         if(board.diagnostics && cpu_temp_sensor && temperature_sensor_get_celsius(cpu_temp_sensor, &cpu_temp) == ESP_OK)
-            measurements_append(wifi.mac, RESOURCE_BOARD, 0, 0, 0, 0, 0, 0, METRIC_ProcessorTemperature, NOW, UNIT_Cel, cpu_temp);
+            measurements_append(board.id, RESOURCE_BOARD, 0, 0, 0, 0, 0, 0, METRIC_ProcessorTemperature, NOW, UNIT_Cel, cpu_temp);
     #endif
 }
 

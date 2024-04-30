@@ -82,6 +82,15 @@ enum backend_format {
 extern const char *backend_format_labels[];
 typedef enum backend_format backend_format_t;
 
+enum ble_mode {
+	BLE_MODE_LEGACY = 0,
+	BLE_MODE_EXTENDED,
+	BLE_MODE_LONG_RANGE,
+	BLE_MODE_NUM_MAX
+};
+extern const char *ble_mode_labels[];
+typedef enum ble_mode ble_mode_t;
+
 enum device_status {
 	DEVICE_STATUS_WORKING = 0,
 	DEVICE_STATUS_ERROR,

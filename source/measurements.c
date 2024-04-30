@@ -6,7 +6,6 @@
 
 #include "adc.h"
 #include "application.h"
-#include "postman.h"
 #include "board.h"
 #include "devices.h"
 #include "enums.h"
@@ -14,6 +13,7 @@
 #include "measurements.h"
 #include "nodes.h"
 #include "now.h"
+#include "postman.h"
 #include "pbuf.h"
 #include "schema.h"
 #include "wifi.h"
@@ -102,7 +102,7 @@ bool measurements_entry_to_frame(measurements_index_t index, measurement_frame_t
 
 bool measurements_entry_to_adv(measurements_index_t index, measurement_adv_t *adv)
 {
-    if(measurements[index].node != wifi.mac)
+    if(measurements[index].node != board.id)
         return false;
 
     adv->path    = measurements_build_path(
@@ -317,7 +317,7 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
         if(template_row[j] == '@' && j != template_row_length - 1) {
             switch(template_row[j + 1]) {
                 case '@': ok = ok && pbuf_putc(buf, '@'); break;
-                case 'i': ok = ok && pbuf_printf(buf, "%016llX", wifi.mac); break;
+                case 'i': ok = ok && pbuf_printf(buf, "%016llX", board.id); break;
                 case 'n': ok = ok && measurements_build_name(buf, index, template_name_separator[0]); break;
                 case 'r': ok = ok && pbuf_printf(buf, "%s", resource_labels[measurements[index].resource]); break;
                 case 'R': ok = ok && pbuf_printf(buf, "%s", measurements[index].resource ? resource_labels[measurements[index].resource] : "none"); break;
@@ -400,7 +400,7 @@ bool measurements_append_from_device(devices_index_t device, device_parameter_t 
 {
     if(device < DEVICES_NUM_MAX && parameter < DEVICES_PARAMETERS_NUM_MAX
       && (!devices[device].mask || devices[device].mask & 1 << parameter))
-        return measurements_append(wifi.mac, devices[device].resource, devices[device].bus, devices[device].multiplexer,
+        return measurements_append(board.id, devices[device].resource, devices[device].bus, devices[device].multiplexer,
                                    devices[device].channel, devices[device].address, devices[device].part, parameter,
                                    metric, timestamp, unit, value + devices[device].offsets[parameter]);
     else

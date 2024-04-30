@@ -13,9 +13,10 @@ typedef struct {
     bool           receive;
     bool           send;
     bool           persistent_only;
-    device_rssi_t  minimum_rssi;
-    uint8_t        scan_duration;    // seconds
+    uint8_t        mode;
     uint8_t        power_level;
+    uint8_t        scan_duration;    // seconds
+    device_rssi_t  minimum_rssi;
 
     esp_err_t      error;
     bool           running;

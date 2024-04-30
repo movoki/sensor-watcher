@@ -339,8 +339,7 @@ void app_main(void)
         }
 
         now = esp_timer_get_time();
-        if(now >= application.next_measurement_time || backends_modified) {
-            backends_modified = false;
+        if(now >= application.next_measurement_time) {
             ESP_LOGI(__func__, "starting measurements @ %lli", now);
             application.last_measurement_time = now;
             application.next_measurement_time += application.sampling_period * 1000000L;
@@ -369,10 +368,10 @@ void app_main(void)
             ESP_LOGI(__func__, "finished sending measurements via BLE @ %lli", esp_timer_get_time());
         }
 
-        if(wifi.status == WIFI_STATUS_ONLINE && measurements_updated && (measurements_count || measurements_full)) {
+        if(wifi.status == WIFI_STATUS_ONLINE && ((measurements_updated && (measurements_count || measurements_full)) || backends_modified)) {
             wifi_measure();
             for(uint8_t i = 0; i != BACKENDS_NUM_MAX; i++) {
-                if(backends[i].uri[0] == 0)
+                if(backends[i].uri[0] == 0 || (backends_modified && !(backends_modified & 1 << i)))
                     continue;
 
                 ESP_LOGI(__func__, "started sending measurements via WiFi @ %lli", esp_timer_get_time());
@@ -590,6 +589,7 @@ void app_main(void)
                 }
                 ESP_LOGI(__func__, "finished sending measurements via WiFi @ %lli", esp_timer_get_time());
             }
+            backends_modified = 0;
             measurements_updated = false;
             ready_to_sleep = true;
         }
