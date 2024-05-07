@@ -333,7 +333,8 @@ void app_main(void)
             ESP_LOGI(__func__, "wifi connection detected");
         }
 
-        if(ble.receive && !ble_is_scanning() && esp_timer_get_time() + ble.scan_duration * 1000000LL >= application.next_measurement_time) {
+        if(ble.receive && !ble_is_scanning() && (ble.scan_duration == 0xFF
+          || esp_timer_get_time() + ble.scan_duration * 1000000LL >= application.next_measurement_time)) {
             ble_start_scan();
             ESP_LOGI(__func__, "starting ble scan @ %lli", esp_timer_get_time());
         }
@@ -347,7 +348,8 @@ void app_main(void)
             if(!application.queue)
                 measurements_init();
             measurements_measure();
-            if(ble.receive) {
+            // stop the scan if not in continuous mode or there are BLE measurements
+            if(ble.receive && (ble.scan_duration != 0xFF || ble_measurements_count)) {
                 ble_stop_scan();
                 ESP_LOGI(__func__, "ble_measurements_count: %lu", ble_measurements_count);
                 ble_merge_measurements();

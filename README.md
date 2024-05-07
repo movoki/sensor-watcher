@@ -4,10 +4,44 @@
 
 SensorWatcher is a firmware for the ESP32 family of microcontrollers that automatically detects I2C, 1-Wire, or BLE sensors and uploads the sensor measurements to backends using HTTP, MQTT, or UDP.
 
+# Backends
 
-# Supported hardware
+## Protocols
 
-## ESP32
+- HTTP
+- HTTPS
+- MQTT
+- MQTTS
+- UDP
+
+## Authentication
+
+- Basic
+- Digest
+- Bearer
+- Token
+- Header
+- Postman
+- X.509
+
+## Data formats
+
+- SenML
+- Postman
+- User defined template
+
+## Predefined templates
+
+- InfluxDB
+- InfluxDB Cloud
+- TagoIO
+- Thinger
+- Ubidots
+
+
+# Hardware
+
+## ESP32 boards
 
 - Adafruit ESP32 Feather V2
 - Adafruit QT Py ESP32 Pico
@@ -24,7 +58,7 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 - M5Stack Tough
 - Generic ESP32 boards
 
-## ESP32-S3
+## ESP32-S3 boards
 
 - Adafruit ESP32-S3 Feather
 - Adafruit QT Py ESP32-S3
@@ -32,12 +66,12 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 - SeeedStudio Xiao ESP32S3
 - Generic ESP32-S3 boards
 
-## ESP32-C3
+## ESP32-C3 boards
 
 - SeeedStudio Xiao ESP32C3
 - Generic ESP32-C3 boards
 
-## I2C
+## I2C devices
 
 - BH1750
 - BMP280
@@ -69,12 +103,12 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 - TSL2591
 - VEML7700
 
-## 1-Wire
+## 1-Wire devices
 
 - DS18B20
 - TMP1826
 
-## BLE
+## BLE devices
 
 - RuuviTag
 - Minew S1
@@ -106,13 +140,21 @@ Most of the code is released under the GPL-3 license. Some libraries are under t
 
 # ChangeLog
 
+## 0.10
+
+- Continuous BLE scan mode that can be enabled by setting the scan_duration to 255.
+
+- More tuning to the BLE advertisement timing to improve data reception rate at the gateways.
+
+- Better timestamping for measurements from nodes to support parallel redundant BLE gateways.
+
 ## 0.9
 
 - Added support for extended and long-range BLE advertisements for chips that support BT5.
 
 - Changed the format for BT4 node advertisements. If you are using SensorWatcher as BLE nodes with previous releases, please upgrade both sensor and gateway nodes to this release at the same time.
 
-- Do not start the WiFi driver if the SSID is not set. For BLE-only use cases.
+- Does not start the WiFi driver if the SSID is not set. For BLE-only use cases.
 
 ## 0.8
 

@@ -22,11 +22,16 @@
 #include "schema.h"
 #include "wifi.h"
 
+#define METRIC_ADV_TIME   170    // milliseconds spending advertising a metric
+#define METRIC_ADV_PAUSE   40    // millisecond without advertisings between metrics
+#define ADV_MIN_INTERVAL   28    // min milliseconds between advertisements
+#define ADV_MAX_INTERVAL   32    // max milliseconds between advertisements
+
+#define BLE_ADDR_TYPE_PUBLIC 0x00
+
 #if MYNEWT_VAL(BLE_EXT_ADV)
     #define USE_BLE_EXT_ADV
 #endif
-
-#define BLE_ADDR_TYPE_PUBLIC 0x00
 
 ble_t ble;
 uint32_t ble_measurements_count = 0;
@@ -42,7 +47,7 @@ bool ble_init()
     ble.send = false;
     ble.persistent_only = false;
     ble.mode = BLE_MODE_LEGACY;
-    ble.minimum_rssi = -100;
+    ble.minimum_rssi = -127;
     ble.scan_duration = 45;
 
 
@@ -174,8 +179,9 @@ static bool write_resource_schema(bp_pack_t *writer)
 
             ok = ok && bp_put_string(writer, "scan_duration");
             ok = ok && bp_create_container(writer, BP_LIST);
-                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_MINIMUM | SCHEMA_MAXIMUM);
                 ok = ok && bp_put_integer(writer, 0);
+                ok = ok && bp_put_integer(writer, 255);
             ok = ok && bp_finish_container(writer);
 
             ok = ok && bp_put_string(writer, "power_level");
@@ -300,6 +306,8 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
     if(rssi < ble.minimum_rssi)
         return;
 
+    time_t now = NOW;
+
     // SensorWatcher node
     if((length == 28 || length == 36) && data[1] == 0xFF && data[2] == 0x57 && data[3] == 0x53) {
         node_t node = {
@@ -319,17 +327,17 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
             return;
 
         nodes[node_index].rssi = rssi;
-        nodes[node_index].timestamp = NOW;
+        nodes[node_index].timestamp = now;
 
         if(length == 28) {
             measurement_adv_t adv;
             memcpy(&adv, data + 4, sizeof(adv));    // because data may not be aligned to 64-bit
-            ble_measurements_update(address, adv.path, adv.address, adv.timestamp, adv.value);
+            ble_measurements_update(address, adv.path, adv.address, adv.timestamp ? adv.timestamp : now, adv.value);
         }
         else if(length == 36) {
             measurement_frame_t frame;
             memcpy(&frame, data + 4, sizeof(frame));    // because data may not be aligned to 64-bit
-            ble_measurements_update(frame.node, frame.path, frame.address, frame.timestamp, frame.value);
+            ble_measurements_update(frame.node, frame.path, frame.address, frame.timestamp ? frame.timestamp : now, frame.value);
         }
         return;
     }
@@ -366,10 +374,9 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
     if(ble.persistent_only && !devices[device_index].persistent)
         return;
 
-    time_t timestamp = NOW;
     device_mask_t device_mask = devices[device_index].mask ? devices[device_index].mask : ~0;
     devices[device_index].rssi = rssi;
-    devices[device_index].timestamp = timestamp;
+    devices[device_index].timestamp = now;
     devices[device_index].status = DEVICE_STATUS_WORKING;
 
     switch(part) {
@@ -383,15 +390,15 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
         float battery = ((uint16_t)((data[20] << 3) | (data[21] >> 5)) + 1600) / 1000.0;
         uint8_t movements = data[22];
 
-        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,   UNIT_Cel ), address, timestamp, temperature);
-        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,      UNIT_RH  ), address, timestamp, humidity > 100.0 ? 100.0 : humidity);
-        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_Pressure,      UNIT_hPa ), address, timestamp, pressure);
-        if(device_mask & 1 << 3) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 3, METRIC_Movements,     UNIT_NONE), address, timestamp, movements);
-        if(device_mask & 1 << 4) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 4, METRIC_AccelerationX, UNIT_m_s2), address, timestamp, acceleration_x);
-        if(device_mask & 1 << 5) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 5, METRIC_AccelerationY, UNIT_m_s2), address, timestamp, acceleration_y);
-        if(device_mask & 1 << 6) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 6, METRIC_AccelerationZ, UNIT_m_s2), address, timestamp, acceleration_z);
-        if(device_mask & 1 << 7) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 7, METRIC_BatteryLevel,  UNIT_V   ), address, timestamp, battery);
-        if(device_mask & 1 << 8) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 8, METRIC_RSSI,          UNIT_dBm ), address, timestamp, rssi);
+        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,   UNIT_Cel ), address, now, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,      UNIT_RH  ), address, now, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_Pressure,      UNIT_hPa ), address, now, pressure);
+        if(device_mask & 1 << 3) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 3, METRIC_Movements,     UNIT_NONE), address, now, movements);
+        if(device_mask & 1 << 4) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 4, METRIC_AccelerationX, UNIT_m_s2), address, now, acceleration_x);
+        if(device_mask & 1 << 5) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 5, METRIC_AccelerationY, UNIT_m_s2), address, now, acceleration_y);
+        if(device_mask & 1 << 6) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 6, METRIC_AccelerationZ, UNIT_m_s2), address, now, acceleration_z);
+        if(device_mask & 1 << 7) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 7, METRIC_BatteryLevel,  UNIT_V   ), address, now, battery);
+        if(device_mask & 1 << 8) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 8, METRIC_RSSI,          UNIT_dBm ), address, now, rssi);
         break;
     }
     case PART_XIAOMI_LYWSDCGQ: {
@@ -399,20 +406,20 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
             float temperature = (int16_t)(((uint16_t)data[22] << 8) | data[21]) / 10.0;
             float humidity = (int16_t)(((uint16_t)data[24] << 8) | data[23]) / 10.0;
 
-            if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature, UNIT_Cel), address, timestamp,  temperature);
-            if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,    UNIT_RH ), address, timestamp,  humidity > 100.0 ? 100.0 : humidity);
+            if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature, UNIT_Cel), address, now,  temperature);
+            if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,    UNIT_RH ), address, now,  humidity > 100.0 ? 100.0 : humidity);
         }
         else if(data[18] == 0x0A && data[19] == 0x10 && data[20] == 0x01)   // 0x100A frame, battery level
-            if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio), address, timestamp, data[21] / 100.0);
+            if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio), address, now, data[21] / 100.0);
         break;
     }
     case PART_MINEW_S1: {
         float temperature = (int16_t)(((uint16_t)data[14] << 8) | data[15]) / 256.0;
         float humidity = (int16_t)(((uint16_t)data[16] << 8) | data[17]) / 256.0;
 
-        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,  UNIT_Cel  ),  address, timestamp, temperature);
-        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,     UNIT_RH   ),  address, timestamp, humidity > 100.0 ? 100.0 : humidity);
-        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio),  address, timestamp, data[13] / 100.0);
+        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,  UNIT_Cel  ),  address, now, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,     UNIT_RH   ),  address, now, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio),  address, now, data[13] / 100.0);
         break;
     }
     default:
@@ -536,8 +543,8 @@ bool ble_send_measurements()
         struct ble_gap_adv_params adv_params = {
             .conn_mode = BLE_GAP_CONN_MODE_NON,
             .disc_mode = BLE_GAP_DISC_MODE_GEN,
-            .itvl_min = BLE_GAP_ADV_ITVL_MS(20),    // milliseconds
-            .itvl_max = BLE_GAP_ADV_ITVL_MS(30),
+            .itvl_min = BLE_GAP_ADV_ITVL_MS(ADV_MIN_INTERVAL),    // milliseconds
+            .itvl_max = BLE_GAP_ADV_ITVL_MS(ADV_MAX_INTERVAL),
         };
     #else
         struct ble_gap_ext_adv_params adv_ext_params_legacy = {
@@ -547,8 +554,8 @@ bool ble_send_measurements()
             .primary_phy = BLE_HCI_LE_PHY_1M,
             .secondary_phy = BLE_HCI_LE_PHY_1M,
             .tx_power = 127,
-            .itvl_min = BLE_GAP_ADV_ITVL_MS(20),    // milliseconds
-            .itvl_max = BLE_GAP_ADV_ITVL_MS(30),
+            .itvl_min = BLE_GAP_ADV_ITVL_MS(ADV_MIN_INTERVAL),    // milliseconds
+            .itvl_max = BLE_GAP_ADV_ITVL_MS(ADV_MAX_INTERVAL),
         };
         struct ble_gap_ext_adv_params adv_ext_params_extended= {
             .own_addr_type = BLE_OWN_ADDR_PUBLIC,
@@ -556,8 +563,8 @@ bool ble_send_measurements()
             .primary_phy = BLE_HCI_LE_PHY_1M,
             .secondary_phy = BLE_HCI_LE_PHY_1M,
             .tx_power = 127,
-            .itvl_min = BLE_GAP_ADV_ITVL_MS(20),    // milliseconds
-            .itvl_max = BLE_GAP_ADV_ITVL_MS(30),
+            .itvl_min = BLE_GAP_ADV_ITVL_MS(ADV_MIN_INTERVAL),    // milliseconds
+            .itvl_max = BLE_GAP_ADV_ITVL_MS(ADV_MAX_INTERVAL),
         };
         struct ble_gap_ext_adv_params adv_ext_params_long_range= {
             .own_addr_type = BLE_OWN_ADDR_PUBLIC,
@@ -565,8 +572,8 @@ bool ble_send_measurements()
             .primary_phy = BLE_HCI_LE_PHY_CODED,
             .secondary_phy = BLE_HCI_LE_PHY_CODED,
             .tx_power = 127,
-            .itvl_min = BLE_GAP_ADV_ITVL_MS(20),    // milliseconds
-            .itvl_max = BLE_GAP_ADV_ITVL_MS(30),
+            .itvl_min = BLE_GAP_ADV_ITVL_MS(ADV_MIN_INTERVAL),    // milliseconds
+            .itvl_max = BLE_GAP_ADV_ITVL_MS(ADV_MAX_INTERVAL),
         };
     #endif
 
@@ -578,9 +585,9 @@ bool ble_send_measurements()
             if(measurements_entry_to_adv(index, (measurement_adv_t *) (raw_adv + 1))) {
                 ok = ok && (err = ble_gap_adv_set_data((uint8_t *) raw_adv + 4, sizeof(raw_adv) - 4)) == ESP_OK;
                 ok = ok && (err = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, NULL, NULL)) == ESP_OK;
-                vTaskDelay (120 / portTICK_PERIOD_MS);
+                vTaskDelay (METRIC_ADV_TIME / portTICK_PERIOD_MS);
                 ok = ok && (err = ble_gap_adv_stop()) == ESP_OK;
-                vTaskDelay (20 / portTICK_PERIOD_MS);
+                vTaskDelay (METRIC_ADV_PAUSE / portTICK_PERIOD_MS);
             }
         #else
             switch(ble.mode) {
@@ -595,9 +602,9 @@ bool ble_send_measurements()
                         ok = ok && (err = ble_gap_ext_adv_configure(instance, &adv_ext_params_legacy, NULL, NULL, NULL)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_set_data(instance, mbuf)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_start(instance, 0, 0)) == ESP_OK;
-                        vTaskDelay (120 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_TIME / portTICK_PERIOD_MS);
                         ok = ok && (err = ble_gap_ext_adv_stop(instance)) == ESP_OK;
-                        vTaskDelay (20 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_PAUSE / portTICK_PERIOD_MS);
                         if(!ok)
                             os_mbuf_free_chain(mbuf);
                     }
@@ -614,9 +621,9 @@ bool ble_send_measurements()
                         ok = ok && (err = ble_gap_ext_adv_configure(instance, &adv_ext_params_extended, NULL, NULL, NULL)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_set_data(instance, mbuf)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_start(instance, 0, 0)) == ESP_OK;
-                        vTaskDelay (120 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_TIME / portTICK_PERIOD_MS);
                         ok = ok && (err = ble_gap_ext_adv_stop(instance)) == ESP_OK;
-                        vTaskDelay (20 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_PAUSE / portTICK_PERIOD_MS);
                         if(!ok)
                             os_mbuf_free_chain(mbuf);
                     }
@@ -633,9 +640,9 @@ bool ble_send_measurements()
                         ok = ok && (err = ble_gap_ext_adv_configure(instance, &adv_ext_params_long_range, NULL, NULL, NULL)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_set_data(instance, mbuf)) == ESP_OK;
                         ok = ok && (err = ble_gap_ext_adv_start(instance, 0, 0)) == ESP_OK;
-                        vTaskDelay (120 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_TIME / portTICK_PERIOD_MS);
                         ok = ok && (err = ble_gap_ext_adv_stop(instance)) == ESP_OK;
-                        vTaskDelay (20 / portTICK_PERIOD_MS);
+                        vTaskDelay (METRIC_ADV_PAUSE / portTICK_PERIOD_MS);
                         if(!ok)
                             os_mbuf_free_chain(mbuf);
                     }
