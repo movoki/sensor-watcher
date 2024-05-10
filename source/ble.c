@@ -508,8 +508,8 @@ bool ble_measurements_update(node_address_t node, measurement_path_t path, devic
     int i;
     for(i = 0; i < ble_measurements_count; i++) {
         if(ble_measurements[i].path == path && ble_measurements[i].address == address && ble_measurements[i].node == node) {
-            ble_measurements[ble_measurements_count].timestamp = timestamp > 1680000000 ? timestamp : 0;
-            ble_measurements[ble_measurements_count].value = value;
+            ble_measurements[i].timestamp = timestamp > 1680000000 ? timestamp : 0;
+            ble_measurements[i].value = value;
             return true;
         }
     }
