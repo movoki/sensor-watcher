@@ -11,6 +11,7 @@ typedef struct {
     uint32_t processor;
 	uint32_t model;
 	uint32_t log_level;
+	uint16_t cpu_frequency;
 	bool 	 diagnostics;
 } board_t;
 

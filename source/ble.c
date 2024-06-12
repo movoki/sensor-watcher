@@ -22,10 +22,12 @@
 #include "schema.h"
 #include "wifi.h"
 
-#define METRIC_ADV_TIME   170    // milliseconds spending advertising a metric
+#define METRIC_ADV_TIME   200    // milliseconds spending advertising a metric
 #define METRIC_ADV_PAUSE   40    // millisecond without advertisings between metrics
 #define ADV_MIN_INTERVAL   28    // min milliseconds between advertisements
 #define ADV_MAX_INTERVAL   32    // max milliseconds between advertisements
+#define SCAN_INTERVAL     BLE_GAP_SCAN_ITVL_MS(90)  // milliseconds
+#define SCAN_WINDOW       BLE_GAP_SCAN_WIN_MS(35)   // milliseconds
 
 #define BLE_ADDR_TYPE_PUBLIC 0x00
 
@@ -332,18 +334,18 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
         if(length == 28) {
             measurement_adv_t adv;
             memcpy(&adv, data + 4, sizeof(adv));    // because data may not be aligned to 64-bit
-            ble_measurements_update(address, adv.path, adv.address, adv.timestamp ? adv.timestamp : now, adv.value);
+            ble_measurements_update(address, adv.descriptor, adv.address, adv.timestamp ? adv.timestamp : now, adv.value);
         }
         else if(length == 36) {
             measurement_frame_t frame;
             memcpy(&frame, data + 4, sizeof(frame));    // because data may not be aligned to 64-bit
-            ble_measurements_update(frame.node, frame.path, frame.address, frame.timestamp ? frame.timestamp : now, frame.value);
+            ble_measurements_update(frame.node, frame.descriptor, frame.address, frame.timestamp ? frame.timestamp : now, frame.value);
         }
         return;
     }
     else if(length == 31 && data[5] == 0x99 && data[6] == 0x04 && data[7] == 0x05)  // Ruvitag 5 (Raw V2)
         part = PART_RUUVITAG;
-    else if(data[5] == 0x95 && data[6] == 0xFE && data[7] == 0x50 && data[8] == 0x20 && data[9] == 0xAA && data[10] == 0x01)  // Xiaomi LYWSDCGQ
+    else if((length == 25 || length == 22) && data[5] == 0x95 && data[6] == 0xFE && data[7] == 0x50 && data[8] == 0x20 && data[9] == 0xAA && data[10] == 0x01)  // Xiaomi LYWSDCGQ
         part = PART_XIAOMI_LYWSDCGQ;
     else if(length == 24 && !memcmp(data, minew_s1_prefix, sizeof(minew_s1_prefix)))    // Minew S1 - HT frame
         part = PART_MINEW_S1;
@@ -390,36 +392,39 @@ void ble_handle_adv(device_address_t address, device_rssi_t rssi, const uint8_t 
         float battery = ((uint16_t)((data[20] << 3) | (data[21] >> 5)) + 1600) / 1000.0;
         uint8_t movements = data[22];
 
-        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,   UNIT_Cel ), address, now, temperature);
-        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,      UNIT_RH  ), address, now, humidity > 100.0 ? 100.0 : humidity);
-        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_Pressure,      UNIT_hPa ), address, now, pressure);
-        if(device_mask & 1 << 3) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 3, METRIC_Movements,     UNIT_NONE), address, now, movements);
-        if(device_mask & 1 << 4) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 4, METRIC_AccelerationX, UNIT_m_s2), address, now, acceleration_x);
-        if(device_mask & 1 << 5) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 5, METRIC_AccelerationY, UNIT_m_s2), address, now, acceleration_y);
-        if(device_mask & 1 << 6) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 6, METRIC_AccelerationZ, UNIT_m_s2), address, now, acceleration_z);
-        if(device_mask & 1 << 7) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 7, METRIC_BatteryLevel,  UNIT_V   ), address, now, battery);
-        if(device_mask & 1 << 8) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 8, METRIC_RSSI,          UNIT_dBm ), address, now, rssi);
+        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,   UNIT_Cel ), address, now, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,      UNIT_RH  ), address, now, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_Pressure,      UNIT_hPa ), address, now, pressure);
+        if(device_mask & 1 << 3) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 3, METRIC_Movements,     UNIT_NONE), address, now, movements);
+        if(device_mask & 1 << 4) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 4, METRIC_AccelerationX, UNIT_m_s2), address, now, acceleration_x);
+        if(device_mask & 1 << 5) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 5, METRIC_AccelerationY, UNIT_m_s2), address, now, acceleration_y);
+        if(device_mask & 1 << 6) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 6, METRIC_AccelerationZ, UNIT_m_s2), address, now, acceleration_z);
+        if(device_mask & 1 << 7) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 7, METRIC_BatteryLevel,  UNIT_V   ), address, now, battery);
+        if(device_mask & 1 << 8) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 8, METRIC_RSSI,          UNIT_dBm ), address, now, rssi);
         break;
     }
     case PART_XIAOMI_LYWSDCGQ: {
+        device_address_t mac = (uint64_t)data[12] << 0  | (uint64_t)data[13] << 8  | (uint64_t)data[14] << 16 |
+                               (uint64_t)data[15] << 40 | (uint64_t)data[16] << 48 | (uint64_t)data[17] << 56 | 0x000000FFFF000000;
+
         if(data[18] == 0x0D && data[19] == 0x10 && data[20] == 0x04) {   // 0x100D frame, temperature & humidity
             float temperature = (int16_t)(((uint16_t)data[22] << 8) | data[21]) / 10.0;
             float humidity = (int16_t)(((uint16_t)data[24] << 8) | data[23]) / 10.0;
 
-            if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature, UNIT_Cel), address, now,  temperature);
-            if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,    UNIT_RH ), address, now,  humidity > 100.0 ? 100.0 : humidity);
+            if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature, UNIT_Cel), mac, now,  temperature);
+            if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,    UNIT_RH ), mac, now,  humidity > 100.0 ? 100.0 : humidity);
         }
         else if(data[18] == 0x0A && data[19] == 0x10 && data[20] == 0x01)   // 0x100A frame, battery level
-            if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio), address, now, data[21] / 100.0);
+            if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio), address, now, data[21] / 100.0);
         break;
     }
     case PART_MINEW_S1: {
         float temperature = (int16_t)(((uint16_t)data[14] << 8) | data[15]) / 256.0;
         float humidity = (int16_t)(((uint16_t)data[16] << 8) | data[17]) / 256.0;
 
-        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,  UNIT_Cel  ),  address, now, temperature);
-        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,     UNIT_RH   ),  address, now, humidity > 100.0 ? 100.0 : humidity);
-        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_path(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio),  address, now, data[13] / 100.0);
+        if(device_mask & 1 << 0) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 0, METRIC_Temperature,  UNIT_Cel  ),  address, now, temperature);
+        if(device_mask & 1 << 1) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 1, METRIC_Humidity,     UNIT_RH   ),  address, now, humidity > 100.0 ? 100.0 : humidity);
+        if(device_mask & 1 << 2) ble_measurements_update(board.id, measurements_build_descriptor(0, RESOURCE_BLE, 0, 0, 0, part, 2, METRIC_BatteryLevel, UNIT_ratio),  address, now, data[13] / 100.0);
         break;
     }
     default:
@@ -467,8 +472,8 @@ bool ble_start_scan()
         struct ble_gap_disc_params disc_params = {
             .filter_duplicates = 0,
             .passive = 1,
-            .itvl = BLE_GAP_SCAN_FAST_PERIOD,
-            .window = BLE_GAP_SCAN_FAST_WINDOW,
+            .itvl = SCAN_INTERVAL,
+            .window = SCAN_WINDOW,
             .filter_policy = 0,
             .limited = 0,
         };
@@ -479,8 +484,8 @@ bool ble_start_scan()
     #else
         struct ble_gap_ext_disc_params ext_disc_params = {
             .passive = 1,
-            .itvl = BLE_GAP_SCAN_FAST_PERIOD,
-            .window = BLE_GAP_SCAN_FAST_WINDOW,
+            .itvl = SCAN_INTERVAL,
+            .window = SCAN_WINDOW,
         };
         if((ble.error = ble_gap_ext_disc(BLE_ADDR_TYPE_PUBLIC, 0, 0, 0, 0, 0,
                                          ble.mode == BLE_MODE_LONG_RANGE ? NULL : &ext_disc_params,
@@ -503,11 +508,11 @@ bool ble_stop_scan()
     return ble_gap_disc_cancel() == 0;
 }
 
-bool ble_measurements_update(node_address_t node, measurement_path_t path, device_address_t address, measurement_timestamp_t timestamp, measurement_value_t value)
+bool ble_measurements_update(node_address_t node, measurement_descriptor_t descriptor, device_address_t address, measurement_timestamp_t timestamp, measurement_value_t value)
 {
     int i;
     for(i = 0; i < ble_measurements_count; i++) {
-        if(ble_measurements[i].path == path && ble_measurements[i].address == address && ble_measurements[i].node == node) {
+        if(ble_measurements[i].descriptor == descriptor && ble_measurements[i].address == address && ble_measurements[i].node == node) {
             ble_measurements[i].timestamp = timestamp > 1680000000 ? timestamp : 0;
             ble_measurements[i].value = value;
             return true;
@@ -515,7 +520,7 @@ bool ble_measurements_update(node_address_t node, measurement_path_t path, devic
     }
     if(i == ble_measurements_count && ble_measurements_count < BLE_MEASUREMENTS_NUM_MAX) {
         ble_measurements[ble_measurements_count].node = node;
-        ble_measurements[ble_measurements_count].path = path;
+        ble_measurements[ble_measurements_count].descriptor = descriptor;
         ble_measurements[ble_measurements_count].address = address;
         ble_measurements[ble_measurements_count].timestamp = timestamp > 1680000000 ? timestamp : 0;
         ble_measurements[ble_measurements_count].value = value;

@@ -53,8 +53,13 @@ void devices_init()
     devices_count = 0;
     memset(devices, 0, sizeof(devices));
     devices_read_from_nvs();
-    ESP_LOGI(__func__, "devices_read_from_nvs ended @ %lli", esp_timer_get_time());
-    devices_detect_all();  
+
+    onewire_init();
+    onewire_start();
+    onewire_detect_devices();
+    i2c_init();
+    i2c_start();
+    i2c_detect_devices();
 }
 
 bool devices_read_from_nvs()
@@ -173,13 +178,13 @@ bool devices_write_to_nvs()
     }
 }
 
-void devices_build_name(devices_index_t device, char *name, size_t name_size, char separator)
+void devices_build_path(devices_index_t device, char *path, size_t path_size, char separator)
 {
     switch(devices[device].resource) {
     case RESOURCE_I2C:
     case RESOURCE_ONEWIRE:
     case RESOURCE_BLE:
-        snprintf(name, name_size, "%s%c%i%c%i%c%i%c%016llX%c%s",
+        snprintf(path, path_size, "%s%c%i%c%i%c%i%c%016llX%c%s",
             resource_labels[devices[device].resource],
             separator,
             devices[device].bus,
@@ -196,16 +201,16 @@ void devices_build_name(devices_index_t device, char *name, size_t name_size, ch
     }
 }
 
-bool devices_parse_name(char *name, device_t *device, char separator)
+bool devices_parse_path(char *path, device_t *device, char separator)
 {
     int i, count;
     char *items[6];
-    for(i = 0, count = 0; name[i]; i++) {
+    for(i = 0, count = 0; path[i]; i++) {
         if(!i)
-            items[count++] = name;
-        if(name[i] == separator) {
-            items[count++] = name + i + 1;
-            name[i] = 0;
+            items[count++] = path;
+        if(path[i] == separator) {
+            items[count++] = path + i + 1;
+            path[i] = 0;
         }
     }
     if(count != 6)
@@ -289,10 +294,10 @@ static bool write_get_response_schema(bp_pack_t *writer)
                     ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_IDENTIFIER | SCHEMA_READ_ONLY);
                 ok = ok && bp_finish_container(writer);
 
-                ok = ok && bp_put_string(writer, "name");
+                ok = ok && bp_put_string(writer, "path");
                 ok = ok && bp_create_container(writer, BP_LIST);
                     ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_READ_ONLY | SCHEMA_MAXIMUM_BYTES);
-                    ok = ok && bp_put_integer(writer, DEVICES_NAME_LENGTH);
+                    ok = ok && bp_put_integer(writer, DEVICES_PATH_LENGTH);
                 ok = ok && bp_finish_container(writer);
 
                 ok = ok && bp_put_string(writer, "persistent");
@@ -345,10 +350,10 @@ static bool write_post_item_request_schema(bp_pack_t *writer)
         ok = ok && bp_put_integer(writer, SCHEMA_MAP);
         ok = ok && bp_create_container(writer, BP_MAP);
 
-            ok = ok && bp_put_string(writer, "name");
+            ok = ok && bp_put_string(writer, "path");
             ok = ok && bp_create_container(writer, BP_LIST);
                 ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
-                ok = ok && bp_put_integer(writer, DEVICES_NAME_LENGTH);
+                ok = ok && bp_put_integer(writer, DEVICES_PATH_LENGTH);
             ok = ok && bp_finish_container(writer);
 
             ok = ok && bp_put_string(writer, "persistent");
@@ -442,19 +447,19 @@ bool devices_schema_handler(char *resource_name, bp_pack_t *writer)
 uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer)
 {
     bool ok = true;
-    char name[DEVICES_NAME_LENGTH];
+    char path[DEVICES_PATH_LENGTH];
     char address[sizeof(device_address_t) * 2 + 1];
 
     if(method == PM_GET) {
         bp_create_container(writer, BP_LIST);
         for(devices_index_t i = 0; i < devices_count && ok; i++) {
-            devices_build_name(i, name, sizeof(name), '_');
+            devices_build_path(i, path, sizeof(path), '_');
             snprintf(address, sizeof(address), "%016llX", devices[i].address);
             ok = ok && bp_create_container(writer, BP_MAP);
                 ok = ok && bp_put_string(writer, "id");
                 ok = ok && bp_put_integer(writer, i);
-                ok = ok && bp_put_string(writer, "name");
-                ok = ok && bp_put_string(writer, name);
+                ok = ok && bp_put_string(writer, "path");
+                ok = ok && bp_put_string(writer, path);
                 ok = ok && bp_put_string(writer, "persistent");
                 ok = ok && bp_put_boolean(writer, devices[i].persistent);
                 ok = ok && bp_put_string(writer, "status");
@@ -485,9 +490,9 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         };
 
         while(ok && bp_next(reader)) {
-            if(bp_match(reader, "name")) {
-                bp_get_string(reader, name, sizeof(name) / sizeof(bp_type_t));
-                ok = ok && devices_parse_name(name, &device, '_');
+            if(bp_match(reader, "path")) {
+                bp_get_string(reader, path, sizeof(path) / sizeof(bp_type_t));
+                ok = ok && devices_parse_path(path, &device, '_');
             }
             else if(bp_match(reader, "persistent"))
                 device.persistent = bp_get_boolean(reader);
@@ -538,30 +543,16 @@ uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         return PM_405_Method_Not_Allowed;
 }
 
-void devices_buses_init()
-{
-    i2c_init();
-    onewire_init();
-}
-
 void devices_buses_start()
 {
-    i2c_start();
     onewire_start();
+    i2c_start();
 }
 
 void devices_buses_stop()
 {
-    i2c_stop();
     onewire_stop();
-}
-
-void devices_detect_all()
-{
-    i2c_detect_devices();
-    ESP_LOGI(__func__, "i2c_detect_devices ended @ %lli", esp_timer_get_time());
-    onewire_detect_devices();
-    ESP_LOGI(__func__, "onewire_detect_devices ended @ %lli", esp_timer_get_time());
+    i2c_stop();
 }
 
 bool devices_measure_all()

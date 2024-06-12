@@ -138,7 +138,40 @@ SensorWatcher is a firmware for the ESP32 family of microcontrollers that automa
 Most of the code is released under the GPL-3 license. Some libraries are under the MIT license.
 
 
+# Roadmap
+
+- Support for ESP32-C6:
+    - SeeedStudio Xiao ESP32C6
+    - M5Stack NanoC6
+
+- Encripted BLE advertisings for extended and long-range modes.
+
+- Add new wireless transports like LoRa and ZigBee.
+
+- Support more sensors!
+
+
 # ChangeLog
+
+## 0.11
+
+- Added support for defining I2C and 1-Wire buses with shared pins. This allows autodetecting I2C and 1-Wire devices on the same Grove port. Boards that have this enabled by default on Grove PORT-A:
+    - Atom Lite
+    - Atom Echo
+    - Atom Matrix
+    - Atom U,
+    - AtomS3
+    - AtomS3 Lite
+    - MStickC
+    - MStickC Plus
+
+- Postman requests received over HTTP can now send a response in another HTTP request.
+
+- BLE scanning window reduced from 100% to 35% to avoid overheating.
+
+- New board parameter to set the CPU frequency.
+
+- Measurements "name" renamed as "path". Some template variables changed also: i->n, n->p, P->D, p->d.
 
 ## 0.10
 

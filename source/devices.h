@@ -12,7 +12,7 @@
 
 #define DEVICES_NUM_MAX 			64
 #define DEVICES_PARAMETERS_NUM_MAX	9		// For RuuviTags
-#define DEVICES_NAME_LENGTH			40
+#define DEVICES_PATH_LENGTH			40
 #define DEVICES_MASK_ALL_ENABLED 	0
 
 typedef uint64_t device_address_t;
@@ -59,10 +59,8 @@ void devices_init();
 bool devices_read_from_nvs();
 bool devices_write_to_nvs();
 
-void devices_buses_init();
 void devices_buses_start();
 void devices_buses_stop();
-void devices_detect_all();
 bool devices_measure_all();
 
 int devices_get(device_t *device);
@@ -72,6 +70,6 @@ int devices_update_or_append(device_t *device);
 
 bool devices_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t devices_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
-void devices_build_name(devices_index_t device, char *name, size_t name_size, char separator);
+void devices_build_path(devices_index_t device, char *path, size_t path_size, char separator);
 
 #endif

@@ -19,14 +19,15 @@
 #include "postman.h"
 #include "board.h"
 #include "devices.h"
+#include "i2c.h"
 #include "measurements.h"
 #include "now.h"
 #include "onewire.h"
 #include "schema.h"
 #include "wifi.h"
 
-onewire_bus_t onewire_buses[ONEWIRE_BUSES_NUM_MAX] = {{0}};
-uint8_t onewire_buses_count = 0;
+RTC_DATA_ATTR onewire_bus_t onewire_buses[ONEWIRE_BUSES_NUM_MAX] = {{0}};
+RTC_DATA_ATTR uint8_t onewire_buses_count = 0;
 
 void onewire_init()
 {
@@ -35,7 +36,6 @@ void onewire_init()
     onewire_read_from_nvs();
     if(!onewire_buses_count)
         onewire_set_default();
-    onewire_start();
 }
 
 bool onewire_read_from_nvs()
@@ -95,47 +95,7 @@ bool onewire_write_to_nvs()
     }
 }
 
-bool onewire_put_schema(bp_pack_t *writer)
-{
-    bool ok = true;
-    ok = ok && bp_create_container(writer, BP_MAP);
-        ok = ok && bp_put_string(writer, "type");
-        ok = ok && bp_put_string(writer, "array");
-        ok = ok && bp_put_string(writer, "items");
-        ok = ok && bp_create_container(writer, BP_MAP);
-
-            ok = ok && bp_put_string(writer, "type");
-            ok = ok && bp_put_string(writer, "object");
-            ok = ok && bp_put_string(writer, "properties");
-            ok = ok && bp_create_container(writer, BP_MAP);
-
-                ok = ok && bp_put_string(writer, "data_pin");
-                ok = ok && bp_create_container(writer, BP_MAP);
-                    ok = ok && bp_put_string(writer, "enum");
-                    ok = ok && bp_create_container(writer, BP_LIST);
-                        for(int i = 0; i < GPIO_NUM_MAX; i++)
-                            ok = ok && bp_put_integer(writer, i);
-                    ok = ok && bp_finish_container(writer);
-                ok = ok && bp_finish_container(writer);
-
-                ok = ok && bp_put_string(writer, "power_pin");
-                ok = ok && bp_create_container(writer, BP_MAP);
-                    ok = ok && bp_put_string(writer, "enum");
-                    ok = ok && bp_create_container(writer, BP_LIST);
-                        ok = ok && bp_put_none(writer);
-                        for(int i = 0; i < GPIO_NUM_MAX; i++)
-                            ok = ok && bp_put_integer(writer, i);
-                    ok = ok && bp_finish_container(writer);
-                ok = ok && bp_finish_container(writer);
-
-            ok = ok && bp_finish_container(writer);
-
-        ok = ok && bp_finish_container(writer);
-    ok = ok && bp_finish_container(writer);
-    return ok;
-}
-
-static bool write_resource_schema(bp_pack_t *writer)
+static bool write_resource_schema(bp_pack_t *writer, int method)
 {
     bool ok = true;
     ok = ok && bp_create_container(writer, BP_LIST);
@@ -143,6 +103,13 @@ static bool write_resource_schema(bp_pack_t *writer)
         ok = ok && bp_create_container(writer, BP_LIST);
             ok = ok && bp_put_integer(writer, SCHEMA_MAP);
             ok = ok && bp_create_container(writer, BP_MAP);
+
+                if(method == SCHEMA_GET_RESPONSE) {
+                    ok = ok && bp_put_string(writer, "active");
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+                    ok = ok && bp_finish_container(writer);
+                }
 
                 ok = ok && bp_put_string(writer, "data_pin");
                 ok = ok && bp_create_container(writer, BP_LIST);
@@ -169,13 +136,22 @@ bool onewire_schema_handler(char *resource_name, bp_pack_t *writer)
 {
     bool ok = true;
 
-    // GET / PUT
+    // GET
     ok = ok && bp_create_container(writer, BP_LIST);
         ok = ok && bp_create_container(writer, BP_LIST);                                // Path
             ok = ok && bp_put_string(writer, resource_name);
         ok = ok && bp_finish_container(writer);
-        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
-        ok = ok && write_resource_schema(writer);                                       // Schema
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE);                         // Methods
+        ok = ok && write_resource_schema(writer, SCHEMA_GET_RESPONSE);                  // Schema
+    ok = ok && bp_finish_container(writer);
+
+    // PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_PUT_REQUEST);                          // Methods
+        ok = ok && write_resource_schema(writer, SCHEMA_PUT_REQUEST);                   // Schema
     ok = ok && bp_finish_container(writer);
 
     return ok;
@@ -189,6 +165,8 @@ uint32_t onewire_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t 
         ok = ok && bp_create_container(writer, BP_LIST);
         for(uint32_t i=0; i != onewire_buses_count && ok; i++) {
             ok = ok && bp_create_container(writer, BP_MAP);
+            ok = ok && bp_put_string(writer, "active");
+            ok = ok && bp_put_boolean(writer, onewire_buses[i].active);
             ok = ok && bp_put_string(writer, "data_pin");
             ok = ok && bp_put_integer(writer, onewire_buses[i].data_pin);
             ok = ok && bp_put_string(writer, "power_pin");
@@ -253,23 +231,14 @@ esp_err_t onewire_start()
 {
     esp_err_t err = ESP_OK;
 
-    onewire_set_power(true);
-    for(int i = 0; i != onewire_buses_count; i++) {
-        ESP_RETURN_ON_FALSE(!onewire_buses[i].handle, ESP_ERR_INVALID_STATE, __func__, "handle not NULL when starting 1-Wire bus");
-
-        if(onewire_buses[i].power_pin != 0xFF) {
-            gpio_config_t io_conf = {};
-            io_conf.intr_type = GPIO_INTR_DISABLE;
-            io_conf.mode = GPIO_MODE_OUTPUT;
-            io_conf.pin_bit_mask = 1ULL << onewire_buses[i].power_pin;
-            gpio_config(&io_conf);
-            // gpio_set_drive_capability(onewire_buses[i].power_pin, GPIO_DRIVE_CAP_3);
+    for(uint8_t bus = 0; bus != onewire_buses_count; bus++) {
+        if(i2c_using_gpio(onewire_buses[bus].data_pin) || (onewire_buses[bus].power_pin != 0xFF && i2c_using_gpio(onewire_buses[bus].power_pin)))
+            ESP_LOGI(__func__, "skipping bus %i, GPIOS already used by I2C", bus);
+        else {
+            err = onewire_start_bus(bus);
+            ESP_LOGI(__func__, "starting bus %i on data:%i / power:%i %s",
+                bus, onewire_buses[bus].data_pin, onewire_buses[bus].power_pin, err ? "failed" : "done");
         }
-        onewire_bus_config_t bus_config = { .bus_gpio_num = onewire_buses[i].data_pin };
-        onewire_bus_rmt_config_t rmt_config = { .max_rx_bytes = 20 };
-        err = err ? err : onewire_new_bus_rmt(&bus_config, &rmt_config, (onewire_bus_handle_t *) &(onewire_buses[i].handle));
-        ESP_LOGI(__func__, "starting 1-Wire bus %i on data:%i / power:%i %s",
-            i, onewire_buses[i].data_pin, onewire_buses[i].power_pin, err ? "failed" : "done");
     }
     return err;
 }
@@ -277,23 +246,57 @@ esp_err_t onewire_start()
 esp_err_t onewire_stop()
 {
     esp_err_t err = ESP_OK;
-
-    for(int i = 0; i != onewire_buses_count; i++) {
-        err = onewire_bus_del((onewire_bus_handle_t)onewire_buses[i].handle);
-        ESP_LOGI(__func__, "stopping 1-Wire bus %i %s", i, err ? "failed" : "done");
-        onewire_buses[i].handle = NULL;
+    for(uint8_t bus = 0; bus != onewire_buses_count; bus++) {
+        if(onewire_buses[bus].handle != NULL) {
+            err = onewire_stop_bus(bus);
+            ESP_LOGI(__func__, "stopping bus %i %s", bus, err ? "failed" : "done");
+        }
     }
-    onewire_set_power(false);
-
     return err;
 }
 
-void onewire_set_power(bool state)
+esp_err_t onewire_start_bus(uint8_t bus)
 {
-    for(int i = 0; i < onewire_buses_count; i++) {
-        if(onewire_buses[i].power_pin != 0xFF)
-            gpio_set_level(onewire_buses[i].power_pin, state);
+    esp_err_t err = ESP_OK;
+
+    if(onewire_buses[bus].handle == NULL) {
+        if(onewire_buses[bus].power_pin != 0xFF) {
+            gpio_config_t io_conf = {};
+            io_conf.intr_type = GPIO_INTR_DISABLE;
+            io_conf.mode = GPIO_MODE_OUTPUT;
+            io_conf.pin_bit_mask = 1ULL << onewire_buses[bus].power_pin;
+            err = err ? err : gpio_config(&io_conf);
+            err = err ? err : gpio_set_level(onewire_buses[bus].power_pin, true);
+            // err = err ? err : gpio_set_drive_capability(onewire_buses[i].power_pin, GPIO_DRIVE_CAP_3);
+        }
+        onewire_bus_config_t bus_config = { .bus_gpio_num = onewire_buses[bus].data_pin };
+        onewire_bus_rmt_config_t rmt_config = { .max_rx_bytes = 20 };
+        err = err ? err : onewire_new_bus_rmt(&bus_config, &rmt_config, (onewire_bus_handle_t *) &(onewire_buses[bus].handle));
     }
+    else
+        ESP_LOGE(__func__, "Handle not NULL when starting bus %u", (unsigned) bus);
+    return err;
+}
+
+esp_err_t onewire_stop_bus(uint8_t bus)
+{
+    esp_err_t err = ESP_OK;
+
+    if(onewire_buses[bus].handle != NULL) {
+        if(onewire_buses[bus].power_pin != 0xFF) {
+            gpio_config_t io_conf = {};
+            io_conf.intr_type = GPIO_INTR_DISABLE;
+            io_conf.mode = GPIO_MODE_INPUT;
+            io_conf.pin_bit_mask = 1ULL << onewire_buses[bus].power_pin;
+            err = err ? err : gpio_set_level(onewire_buses[bus].power_pin, false);
+            err = err ? err : gpio_config(&io_conf);
+        }
+        err = err ? err : onewire_bus_del((onewire_bus_handle_t)onewire_buses[bus].handle);
+        onewire_buses[bus].handle = NULL;
+    }
+    else
+        ESP_LOGE(__func__, "Handle already NULL when stopping bus %u", (unsigned) bus);
+    return err;
 }
 
 void onewire_set_default()
@@ -314,23 +317,35 @@ void onewire_set_default()
     case BOARD_MODEL_M5STACK_ATOM_LITE:         // PORT-B on AtomPortABC
     case BOARD_MODEL_M5STACK_ATOM_MATRIX:       // PORT-B on AtomPortABC
     case BOARD_MODEL_M5STACK_ATOM_ECHO:         // PORT-B on AtomPortABC
-        onewire_buses_count = 1;
+        onewire_buses_count = 2;
         onewire_buses[0].data_pin = 33;
         onewire_buses[0].power_pin = 23;
+        onewire_buses[1].data_pin = 32;         // PORT-A
+        onewire_buses[1].power_pin = 26;
         break;
     case BOARD_MODEL_M5STACK_ATOM_U:
-        onewire_buses_count = 1;
-        onewire_buses[0].data_pin = 22;
+        onewire_buses_count = 2;
+        onewire_buses[0].data_pin = 22;         // Ext
         onewire_buses[0].power_pin = 21;
+        onewire_buses[1].data_pin = 32;         // PORT-A
+        onewire_buses[1].power_pin = 26;
         break;
-    case BOARD_MODEL_M5STACK_ATOMS3:            // PORT-B on AtomPortABC
+    case BOARD_MODEL_M5STACK_ATOMS3:
     case BOARD_MODEL_M5STACK_ATOMS3_LITE:
-        onewire_buses_count = 1;
-        onewire_buses[0].data_pin = 8;
+        onewire_buses_count = 2;
+        onewire_buses[0].data_pin = 8;          // PORT-B on AtomPortABC
         onewire_buses[0].power_pin = 7;
+        onewire_buses[1].data_pin = 1;          // PORT-A
+        onewire_buses[1].power_pin = 2;
         break;
     case BOARD_MODEL_M5STACK_M5STICKC:
     case BOARD_MODEL_M5STACK_M5STICKC_PLUS:
+        onewire_buses_count = 2;
+        onewire_buses[0].data_pin = 36;         // Ext
+        onewire_buses[0].power_pin = 26;
+        onewire_buses[1].data_pin = 22;         // PORT-A
+        onewire_buses[1].power_pin = 21;
+        break;
     case BOARD_MODEL_M5STACK_CORE2:             // PORT-B
     case BOARD_MODEL_M5STACK_CORE2_AWS:         // PORT-B
     case BOARD_MODEL_M5STACK_TOUGH:             // PORT-B
@@ -356,6 +371,13 @@ void onewire_set_default()
     }
 }
 
+bool onewire_using_gpio(uint8_t gpio)
+{
+    for(uint8_t bus = 0; bus != onewire_buses_count; bus++)
+        if(onewire_buses[bus].active && (onewire_buses[bus].data_pin == gpio || onewire_buses[bus].power_pin == gpio))
+            return true;
+    return false;
+}
 
 // Devices
 
@@ -366,6 +388,7 @@ void onewire_detect_devices()
             onewire_device_t onewire_device;
             onewire_device_iter_handle_t iter = NULL;
             esp_err_t result = ESP_OK;
+            bool device_found = false;
 
             if(onewire_new_device_iter((onewire_bus_handle_t) onewire_buses[bus].handle, &iter) != ESP_OK) {
                 ESP_LOGI(__func__, "Device iterator creation failed");
@@ -374,6 +397,7 @@ void onewire_detect_devices()
             do {
                 result = onewire_device_iter_get_next(iter, &onewire_device);
                 if(result == ESP_OK) {
+                    device_found = true;
                     for(device_part_t part_index = 0; part_index < PART_NUM_MAX; part_index++) {
                         if(parts[part_index].resource == RESOURCE_ONEWIRE && parts[part_index].id_start == (onewire_device.address & 0xFF)) {
                             device_t device = {
@@ -390,9 +414,9 @@ void onewire_detect_devices()
                             };
                             int device_index = devices_get_or_append(&device);
                             if(device_index >= 0) {
-                                char name[DEVICES_NAME_LENGTH];
-                                devices_build_name(device_index, name, sizeof(name), '_');
-                                ESP_LOGI(__func__, "Device found: %s", name);
+                                char path[DEVICES_PATH_LENGTH];
+                                devices_build_path(device_index, path, sizeof(path), '_');
+                                ESP_LOGI(__func__, "Device found: %s", path);
                             }
                             else
                                 ESP_LOGE(__func__, "DEVICES_NUM_MAX reached");
@@ -402,6 +426,14 @@ void onewire_detect_devices()
                 }
             } while (result != ESP_ERR_NOT_FOUND);
             onewire_del_device_iter(iter);
+
+            if(!device_found) {
+                onewire_stop_bus(bus);
+                onewire_buses[bus].active = false;
+                ESP_LOGI(__func__, "disabling bus %i, no devices found.", bus);
+            }
+            else
+                onewire_buses[bus].active = true;
         }
     }
 }

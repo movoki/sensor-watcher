@@ -44,7 +44,7 @@ typedef struct {
 	char template_header[BACKEND_TEMPLATE_HEADER_LENGTH];
 	char template_row[BACKEND_TEMPLATE_ROW_LENGTH];
 	char template_row_separator[BACKEND_TEMPLATE_SEPARATOR_LENGTH];
-	char template_name_separator[BACKEND_TEMPLATE_SEPARATOR_LENGTH];
+	char template_path_separator[BACKEND_TEMPLATE_SEPARATOR_LENGTH];
 	char template_footer[BACKEND_TEMPLATE_FOOTER_LENGTH];
 
 	void *handle;

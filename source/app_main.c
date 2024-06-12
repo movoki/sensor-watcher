@@ -231,7 +231,7 @@ size_t encode_measurements(uint8_t backend_index)
         case BACKEND_FORMAT_TEMPLATE:
             ok = ok && measurements_to_template(backend_buffer, &length,
                 backends[backend_index].template_header, backends[backend_index].template_row,
-                backends[backend_index].template_row_separator, backends[backend_index].template_name_separator,
+                backends[backend_index].template_row_separator, backends[backend_index].template_path_separator,
                 backends[backend_index].template_footer);
             break;
         default:
@@ -271,19 +271,15 @@ void app_main(void)
     board_init();
     application_init();
     nodes_init();
-    adc_init();
-    i2c_init();
-    onewire_init();
-    ble_init();
     backends_init(); // 47 ms
     measurements_init();
-    ESP_LOGI(__func__, "measurements_init ended @ %lli", esp_timer_get_time());
+    adc_init();
+    ble_init();
 
-    if(!slept_once) {
-        devices_init(); // 64 ms
-        vTaskDelay (50 / portTICK_PERIOD_MS);  // Wait for I2C devices to stabilize after configuration
-        ESP_LOGI(__func__, "devices_init ended @ %lli", esp_timer_get_time());
-    }
+    if(!slept_once)
+        devices_init();
+    else
+        devices_buses_start();
 
     framer_set_buffer(&framer, (uint8_t *)postman_buffer, sizeof(postman_buffer));
     postman_init(&postman);
@@ -301,7 +297,8 @@ void app_main(void)
     postman_register_resource(&postman, "onewire", &onewire_resource_handler);
     postman_register_resource(&postman, "wifi", &wifi_resource_handler);
 
-    application.next_measurement_time += (ble.receive ? ble.scan_duration * 1000000 : 0);
+    if(ble.receive && ble.scan_duration != 0xFF)
+        application.next_measurement_time += ble.scan_duration * 1000000;
 
     ESP_LOGI(__func__, "inits ended @ %lli", esp_timer_get_time());
     ESP_LOGI(__func__, "application.next_measurement_time: %lli", application.next_measurement_time);
@@ -471,12 +468,22 @@ void app_main(void)
                             ESP_LOGI(__func__, "HTTP Error %i: %s", status, backend_buffer);
                         else if(backend_buffer_length && backends[i].format == BACKEND_FORMAT_POSTMAN && backends[i].auth == BACKEND_AUTH_POSTMAN) {
                             hmac_sha256_key_t binary_key;
-                            if(hmac_hex_decode(binary_key, sizeof(binary_key), backends[i].key, strlen(backends[i].key)) == sizeof(binary_key))
-                                postman_handle_pack(&postman,
+                            if(hmac_hex_decode(binary_key, sizeof(binary_key), backends[i].key, strlen(backends[i].key)) == sizeof(binary_key)) {
+                                ESP_LOGI(__func__, "Handling HTTP Postman request");
+                                backend_buffer_length = sizeof(bp_type_t) * postman_handle_pack(&postman,
                                     (bp_type_t *) backend_buffer,
                                     backend_buffer_length / sizeof(bp_type_t),
                                     sizeof(backend_buffer) / sizeof(bp_type_t),
                                     NOW, backends[i].user, binary_key);
+                                ESP_LOGI(__func__, "HTTP Postman response: buffer length %u", backend_buffer_length);
+                                if(backend_buffer_length) {
+                                    esp_http_client_set_post_field(client, backend_buffer, backend_buffer_length);
+                                    backend_buffer_length = 0;
+                                    err = esp_http_client_perform(client);
+                                    status = esp_http_client_get_status_code(client);
+                                    ESP_LOGI(__func__, "HTTP Postman response: err %i status %i",err,status);
+                                }
+                            }
                             else
                                 ESP_LOGI(__func__, "HMAC key is not 64 bytes long");
                         }
@@ -561,7 +568,7 @@ void app_main(void)
                                 backends[i].auth == BACKEND_AUTH_POSTMAN ? backends[i].key : NULL);
                             break;
                         case BACKEND_FORMAT_TEMPLATE:
-                            measurements_entry_to_template_row(index, &buf, backends[i].template_row, backends[i].template_name_separator);
+                            measurements_entry_to_template_row(index, &buf, backends[i].template_row, backends[i].template_path_separator);
                             break;
                         case BACKEND_FORMAT_FRAME:
                             buf.length = sizeof(measurement_frame_t);
@@ -606,8 +613,8 @@ void app_main(void)
                 slept_once = true;
                 wifi_stop();
                 ble_stop();
-                i2c_set_power(false);
-                onewire_set_power(false);
+                i2c_stop();
+                onewire_stop();
                 esp_sleep_enable_timer_wakeup(sleep_duration);
                 esp_deep_sleep_start();
                 // this is never reached

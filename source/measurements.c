@@ -22,7 +22,7 @@ bool measurements_full = false;
 measurements_index_t measurements_count = 0;
 measurement_t measurements[MEASUREMENTS_NUM_MAX] = {{0}};
 
-measurement_path_t measurements_build_path(measurement_tag_t tag, resource_t resource, device_bus_t bus,
+measurement_descriptor_t measurements_build_descriptor(measurement_tag_t tag, resource_t resource, device_bus_t bus,
     device_multiplexer_t multiplexer, device_channel_t channel, device_part_t part, device_parameter_t parameter,
     measurement_metric_t metric, measurement_unit_t unit)
 {
@@ -37,7 +37,7 @@ measurement_path_t measurements_build_path(measurement_tag_t tag, resource_t res
            ((uint64_t)(unit & 0xFF) << 56);
 }
 
-bool measurements_build_name(pbuf_t *buf, measurements_index_t measurement, char separator)
+bool measurements_build_path(pbuf_t *buf, measurements_index_t measurement, char separator)
 {
     switch(measurements[measurement].resource) {
     case RESOURCE_I2C:
@@ -84,7 +84,7 @@ bool measurements_build_name(pbuf_t *buf, measurements_index_t measurement, char
 bool measurements_entry_to_frame(measurements_index_t index, measurement_frame_t *frame)
 {
     frame->node    = measurements[index].node;
-    frame->path    = measurements_build_path(
+    frame->descriptor    = measurements_build_descriptor(
                          measurements[index].node & 0xFF,
                          measurements[index].resource,
                          measurements[index].bus,
@@ -105,7 +105,7 @@ bool measurements_entry_to_adv(measurements_index_t index, measurement_adv_t *ad
     if(measurements[index].node != board.id)
         return false;
 
-    adv->path    = measurements_build_path(
+    adv->descriptor    = measurements_build_descriptor(
                        measurements[index].node & 0xFF,
                        measurements[index].resource,
                        measurements[index].bus,
@@ -147,7 +147,7 @@ static bool write_resource_schema(bp_pack_t *writer)
 
                 ok = ok && bp_create_container(writer, BP_LIST);
                     ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
-                    ok = ok && bp_put_integer(writer, MEASUREMENTS_NAME_LENGTH);
+                    ok = ok && bp_put_integer(writer, MEASUREMENTS_PATH_LENGTH);
                 ok = ok && bp_finish_container(writer);
 
                 ok = ok && bp_create_container(writer, BP_LIST);
@@ -196,8 +196,8 @@ uint32_t measurements_resource_handler(uint32_t method, bp_pack_t *reader, bp_pa
 bool measurements_pack(bp_pack_t *bp)
 {
     bool ok = true;
-    char name[MEASUREMENTS_NAME_LENGTH];
-    pbuf_t buf = { name, sizeof(name), 0 };
+    char path[MEASUREMENTS_PATH_LENGTH];
+    pbuf_t buf = { path, sizeof(path), 0 };
     measurements_index_t index = 0;
     measurements_index_t count = measurements_full ? MEASUREMENTS_NUM_MAX : measurements_count;
 
@@ -205,9 +205,9 @@ bool measurements_pack(bp_pack_t *bp)
     for(int n = 0; n < count && ok; n++) {
         index = measurements_full ? (measurements_count + n) % MEASUREMENTS_NUM_MAX : n;
         buf.length = 0;
-        ok = ok && measurements_build_name(&buf, index, '_');
+        ok = ok && measurements_build_path(&buf, index, '_');
         ok = ok && bp_create_container(bp, BP_LIST);
-            ok = ok && bp_put_string(bp, name);
+            ok = ok && bp_put_string(bp, path);
             ok = ok && bp_put_big_integer(bp, measurements[index].timestamp ? measurements[index].timestamp : NOW);
             ok = ok && bp_put_string(bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(bp, measurements[index].value);
@@ -234,20 +234,20 @@ bool measurements_put_signature(bp_pack_t *bp, char *id, char *key)
 bool measurements_entry_to_postman(measurements_index_t index, char *buffer, size_t *buffer_size, char *id, char *key)
 {
     bool ok = true;
-    char name[MEASUREMENTS_NAME_LENGTH];
-    pbuf_t buf = { name, sizeof(name), 0 };
+    char path[MEASUREMENTS_PATH_LENGTH];
+    pbuf_t buf = { path, sizeof(path), 0 };
 
     bp_pack_t bp;
     bp_set_buffer(&bp, (bp_type_t *) buffer, *buffer_size / sizeof(bp_type_t));
 
-    ok = ok && measurements_build_name(&buf, index, '_');
+    ok = ok && measurements_build_path(&buf, index, '_');
     ok = ok && bp_put_integer(&bp, PM_205_Content << 24 | 0);
     ok = ok && bp_create_container(&bp, BP_LIST);
         ok = ok && bp_put_string(&bp, "measurements");
     ok = ok && bp_finish_container(&bp);
     ok = ok && bp_create_container(&bp, BP_LIST);
         ok = ok && bp_create_container(&bp, BP_LIST);
-            ok = ok && bp_put_string(&bp, name);
+            ok = ok && bp_put_string(&bp, path);
             ok = ok && bp_put_big_integer(&bp, measurements[index].timestamp ? measurements[index].timestamp : NOW);
             ok = ok && bp_put_string(&bp, unit_labels[measurements[index].unit]);
             ok = ok && bp_put_float(&bp, measurements[index].value);
@@ -267,7 +267,7 @@ bool measurements_to_postman(char *buffer, size_t *buffer_size, char *id, char *
     bool ok = true;
 
     bp_set_buffer(&bp, (bp_type_t *) buffer, *buffer_size / sizeof(bp_type_t));
-    ok = ok && bp_put_integer(&bp, PM_205_Content << 24 | 0);
+    ok = ok && bp_put_integer(&bp, PM_POST << 24 | 0);
     ok = ok && bp_create_container(&bp, BP_LIST);
         ok = ok && bp_put_string(&bp, "measurements");
     ok = ok && bp_finish_container(&bp);
@@ -283,7 +283,7 @@ bool measurements_entry_to_senml_row(measurements_index_t index, pbuf_t *buf)
 {
     bool ok = true;
     ok = ok && pbuf_printf(buf,"{\"n\":\"urn:dev:mac:");
-    ok = ok && measurements_build_name(buf, index, '_');
+    ok = ok && measurements_build_path(buf, index, '_');
     ok = ok && pbuf_printf(buf,"\",\"u\":\"%s\",\"v\":%f,\"t\":%lli}", unit_labels[measurements[index].unit],
         measurements[index].value, (int64_t) (measurements[index].timestamp ? measurements[index].timestamp : NOW));
     return ok;
@@ -309,7 +309,7 @@ bool measurements_to_senml(char *buffer, size_t *buffer_size)
     return ok;
 }
 
-bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf, char *template_row, char *template_name_separator)
+bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf, char *template_row, char *template_path_separator)
 {
     bool ok = true;
     int template_row_length = strlen(template_row);
@@ -317,16 +317,16 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
         if(template_row[j] == '@' && j != template_row_length - 1) {
             switch(template_row[j + 1]) {
                 case '@': ok = ok && pbuf_putc(buf, '@'); break;
-                case 'i': ok = ok && pbuf_printf(buf, "%016llX", board.id); break;
-                case 'n': ok = ok && measurements_build_name(buf, index, template_name_separator[0]); break;
+                case 'n': ok = ok && pbuf_printf(buf, "%016llX", board.id); break;
+                case 'p': ok = ok && measurements_build_path(buf, index, template_path_separator[0]); break;
                 case 'r': ok = ok && pbuf_printf(buf, "%s", resource_labels[measurements[index].resource]); break;
                 case 'R': ok = ok && pbuf_printf(buf, "%s", measurements[index].resource ? resource_labels[measurements[index].resource] : "none"); break;
                 case 'b': ok = ok && pbuf_printf(buf, "%u", measurements[index].bus); break;
                 case 'x': ok = ok && pbuf_printf(buf, "%u", measurements[index].multiplexer); break;
                 case 'c': ok = ok && pbuf_printf(buf, "%u", measurements[index].channel); break;
                 case 'a': ok = ok && pbuf_printf(buf, "%016llX", measurements[index].address); break;
-                case 'p': ok = ok && pbuf_printf(buf, "%s", parts[measurements[index].part].label); break;
-                case 'P': ok = ok && pbuf_printf(buf, "%s", measurements[index].part ? parts[measurements[index].part].label : "none"); break;
+                case 'd': ok = ok && pbuf_printf(buf, "%s", parts[measurements[index].part].label); break;
+                case 'D': ok = ok && pbuf_printf(buf, "%s", measurements[index].part ? parts[measurements[index].part].label : "none"); break;
                 case 'e': ok = ok && pbuf_printf(buf, "%u", measurements[index].parameter); break;
                 case 'm': ok = ok && pbuf_printf(buf, "%s", metric_labels[measurements[index].metric]); break;
                 case 'M': ok = ok && pbuf_printf(buf, "%s", measurements[index].metric ? metric_labels[measurements[index].metric] : "none"); break;
@@ -347,7 +347,7 @@ bool measurements_entry_to_template_row(measurements_index_t index, pbuf_t *buf,
     return ok;
 }
 
-bool measurements_to_template(char *buffer, size_t *buffer_size, char *template_header, char *template_row, char *template_row_separator, char *template_name_separator, char *template_footer)
+bool measurements_to_template(char *buffer, size_t *buffer_size, char *template_header, char *template_row, char *template_row_separator, char *template_path_separator, char *template_footer)
 {
     bool ok = true;
     pbuf_t buf = { buffer, *buffer_size, 0 };
@@ -357,7 +357,7 @@ bool measurements_to_template(char *buffer, size_t *buffer_size, char *template_
     ok = ok && pbuf_printf(&buf, "%s", template_header);
     for(int n = 0; n != count && ok; n++) {
         index = measurements_full ? (measurements_count + n) % MEASUREMENTS_NUM_MAX : n;
-        ok = ok && measurements_entry_to_template_row(index, &buf, template_row, template_name_separator);
+        ok = ok && measurements_entry_to_template_row(index, &buf, template_row, template_path_separator);
         if(n != count - 1)
             ok = ok && pbuf_printf(&buf, "%s", template_row_separator);
     }
@@ -407,29 +407,29 @@ bool measurements_append_from_device(devices_index_t device, device_parameter_t 
         return false;
 }
 
-bool measurements_append_with_path(node_address_t node, measurement_path_t path, device_address_t address,
+bool measurements_append_with_descriptor(node_address_t node, measurement_descriptor_t descriptor, device_address_t address,
                                    measurement_timestamp_t timestamp, measurement_value_t value)
 {
     return measurements_append(node,
-        (path & 0x0000000000003F00) >> 8,    // resource:6
-        (path & 0x000000000001C000) >> 14,   // bus:3
-        (path & 0x00000000000E0000) >> 17,   // multiplexer:3
-        (path & 0x0000000000F00000) >> 20,   // channel:4
+        (descriptor & 0x0000000000003F00) >> 8,    // resource:6
+        (descriptor & 0x000000000001C000) >> 14,   // bus:3
+        (descriptor & 0x00000000000E0000) >> 17,   // multiplexer:3
+        (descriptor & 0x0000000000F00000) >> 20,   // channel:4
         address,
-        (path & 0x0000000FFF000000) >> 24,   // part:12
-        (path & 0x00000FF000000000) >> 36,   // parameter:8
-        (path & 0x00FFF00000000000) >> 44,   // metric:12
+        (descriptor & 0x0000000FFF000000) >> 24,   // part:12
+        (descriptor & 0x00000FF000000000) >> 36,   // parameter:8
+        (descriptor & 0x00FFF00000000000) >> 44,   // metric:12
         timestamp,
-        (path & 0xFF00000000000000) >> 56,   // unit:8
+        (descriptor & 0xFF00000000000000) >> 56,   // unit:8
         value);
 }
 
 bool measurements_append_from_frame(measurement_frame_t *frame)
 {
-    return measurements_append_with_path(frame->node, frame->path, frame->address, frame->timestamp, frame->value);
+    return measurements_append_with_descriptor(frame->node, frame->descriptor, frame->address, frame->timestamp, frame->value);
 }
 
 bool measurements_append_from_adv(node_address_t node, measurement_adv_t *adv)
 {
-    return measurements_append_with_path(node, adv->path, adv->address, adv->timestamp, adv->value);
+    return measurements_append_with_descriptor(node, adv->descriptor, adv->address, adv->timestamp, adv->value);
 }

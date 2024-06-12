@@ -19,10 +19,11 @@
 #include "i2c.h"
 #include "measurements.h"
 #include "now.h"
+#include "onewire.h"
 #include "schema.h"
 
-i2c_bus_t i2c_buses[I2C_BUSES_NUM_MAX] = {{0}};
-uint8_t i2c_buses_count = 0;
+RTC_DATA_ATTR i2c_bus_t i2c_buses[I2C_BUSES_NUM_MAX] = {{0}};
+RTC_DATA_ATTR uint8_t i2c_buses_count = 0;
 
 bool i2c_read(uint8_t port, uint8_t address, uint8_t *buffer, size_t buffer_size)
 {
@@ -41,7 +42,6 @@ void i2c_init()
     i2c_read_from_nvs();
     if(!i2c_buses_count)
         i2c_set_default();
-    i2c_start();
 }
 
 bool i2c_read_from_nvs()
@@ -109,7 +109,7 @@ bool i2c_write_to_nvs()
     }
 }
 
-static bool write_resource_schema(bp_pack_t *writer)
+static bool write_resource_schema(bp_pack_t *writer, int method)
 {
     bool ok = true;
     ok = ok && bp_create_container(writer, BP_LIST);
@@ -117,6 +117,13 @@ static bool write_resource_schema(bp_pack_t *writer)
         ok = ok && bp_create_container(writer, BP_LIST);
             ok = ok && bp_put_integer(writer, SCHEMA_MAP);
             ok = ok && bp_create_container(writer, BP_MAP);
+
+                if(method == SCHEMA_GET_RESPONSE) {
+                    ok = ok && bp_put_string(writer, "active");
+                    ok = ok && bp_create_container(writer, BP_LIST);
+                        ok = ok && bp_put_integer(writer, SCHEMA_BOOLEAN);
+                    ok = ok && bp_finish_container(writer);
+                }
 
                 ok = ok && bp_put_string(writer, "port");
                 ok = ok && bp_create_container(writer, BP_LIST);
@@ -157,13 +164,22 @@ bool i2c_schema_handler(char *resource_name, bp_pack_t *writer)
 {
     bool ok = true;
 
-    // GET / PUT
+    // GET
     ok = ok && bp_create_container(writer, BP_LIST);
         ok = ok && bp_create_container(writer, BP_LIST);                                // Path
             ok = ok && bp_put_string(writer, resource_name);
         ok = ok && bp_finish_container(writer);
-        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE | SCHEMA_PUT_REQUEST);    // Methods
-        ok = ok && write_resource_schema(writer);                                       // Schema
+        ok = ok && bp_put_integer(writer, SCHEMA_GET_RESPONSE);                         // Methods
+        ok = ok && write_resource_schema(writer, SCHEMA_GET_RESPONSE);                  // Schema
+    ok = ok && bp_finish_container(writer);
+
+    // PUT
+    ok = ok && bp_create_container(writer, BP_LIST);
+        ok = ok && bp_create_container(writer, BP_LIST);                                // Path
+            ok = ok && bp_put_string(writer, resource_name);
+        ok = ok && bp_finish_container(writer);
+        ok = ok && bp_put_integer(writer, SCHEMA_PUT_REQUEST);                          // Methods
+        ok = ok && write_resource_schema(writer, SCHEMA_PUT_REQUEST);                   // Schema
     ok = ok && bp_finish_container(writer);
 
     return ok;
@@ -178,6 +194,7 @@ uint32_t i2c_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *wri
         ok = ok && bp_create_container(writer, BP_LIST);
         for(uint32_t i=0; i != i2c_buses_count && ok; i++) {
             ok = ok && bp_create_container(writer, BP_MAP);
+            ok = ok && bp_put_string(writer, "active") && bp_put_boolean(writer, i2c_buses[i].active);
             ok = ok && bp_put_string(writer, "port") && bp_put_integer(writer, i2c_buses[i].port);
             ok = ok && bp_put_string(writer, "sda_pin") && bp_put_integer(writer, i2c_buses[i].sda_pin);
             ok = ok && bp_put_string(writer, "scl_pin") && bp_put_integer(writer, i2c_buses[i].scl_pin);
@@ -247,19 +264,35 @@ esp_err_t i2c_start()
     esp_err_t err = ESP_OK;
 
     i2c_set_power(true);
-    for(int i = 0; i != i2c_buses_count; i++) {
+    for(uint8_t bus = 0; bus != i2c_buses_count; bus++) {
+        if(onewire_using_gpio(i2c_buses[bus].sda_pin) || onewire_using_gpio(i2c_buses[bus].scl_pin)) {
+            ESP_LOGI(__func__, "skipping bus %i, GPIOS already used by 1-Wire", bus);
+        }
+        else {
+            err = i2c_start_bus(bus);
+            ESP_LOGI(__func__, "starting bus %i on SDA %i / SCL %i %s",
+                i2c_buses[bus].port, i2c_buses[bus].sda_pin, i2c_buses[bus].scl_pin, err ? "failed" : "done");
+        }
+    }
+    return err;
+}
+
+esp_err_t i2c_start_bus(uint8_t bus)
+{
+    esp_err_t err = ESP_OK;
+
+    if(!i2c_buses[bus].enabled) {
         i2c_config_t config = {
             .mode = I2C_MODE_MASTER,
-            .sda_io_num = i2c_buses[i].sda_pin,
-            .scl_io_num = i2c_buses[i].scl_pin,
+            .sda_io_num = i2c_buses[bus].sda_pin,
+            .scl_io_num = i2c_buses[bus].scl_pin,
             .sda_pullup_en = GPIO_PULLUP_ENABLE,
             .scl_pullup_en = GPIO_PULLUP_ENABLE,
-            .master.clk_speed = i2c_buses[i].speed,
+            .master.clk_speed = i2c_buses[bus].speed,
         };
-        err = err ? err : i2c_driver_install(i2c_buses[i].port, config.mode, 0, 0, 0);
-        err = err ? err : i2c_param_config(i2c_buses[i].port, &config);
-        ESP_LOGI(__func__, "starting I2C bus %i on SDA %i / SCL %i %s",
-            i2c_buses[i].port, i2c_buses[i].sda_pin, i2c_buses[i].scl_pin, err ? "failed" : "done");
+        err = err ? err : i2c_driver_install(i2c_buses[bus].port, config.mode, 0, 0, 0);
+        err = err ? err : i2c_param_config(i2c_buses[bus].port, &config);
+        i2c_buses[bus].enabled = true;
     }
     return err;
 }
@@ -268,13 +301,23 @@ esp_err_t i2c_stop()
 {
     esp_err_t err = ESP_OK;
 
-    for(int i = 0; i != i2c_buses_count; i++) {
-        err = i2c_driver_delete(i2c_buses[i].port);
-        ESP_LOGI(__func__, "stopping I2C bus %i on SDA %i / SCL %i %s",
-            i2c_buses[i].port, i2c_buses[i].sda_pin, i2c_buses[i].scl_pin, err ? "failed" : "done");
+    for(uint8_t bus = 0; bus != i2c_buses_count; bus++) {
+        err = i2c_stop_bus(bus);
+        ESP_LOGI(__func__, "stopping bus %i on SDA %i / SCL %i %s",
+            i2c_buses[bus].port, i2c_buses[bus].sda_pin, i2c_buses[bus].scl_pin, err ? "failed" : "done");
     }
     i2c_set_power(false);
 
+    return err;
+}
+
+esp_err_t i2c_stop_bus(uint8_t bus)
+{
+    esp_err_t err = ESP_OK;
+    if(i2c_buses[bus].enabled) {
+        err = i2c_driver_delete(i2c_buses[bus].port);
+        i2c_buses[bus].enabled = false;
+    }
     return err;
 }
 
@@ -416,6 +459,15 @@ void i2c_set_default()
     }
 }
 
+bool i2c_using_gpio(uint8_t gpio)
+{
+    for(uint8_t bus = 0; bus != i2c_buses_count; bus++)
+        if(i2c_buses[bus].active && (i2c_buses[bus].sda_pin == gpio || i2c_buses[bus].scl_pin == gpio))
+            return true;
+    return false;
+}
+
+
 void i2c_detect_devices()
 {
     uint8_t bus;
@@ -425,34 +477,50 @@ void i2c_detect_devices()
     uint8_t multiplexers_mask = 0;
 
     for(bus = 0; bus < i2c_buses_count; bus++) {
-        multiplexers_mask = 0;
-        for(multiplexer = 0; multiplexer < I2C_PCA9548_NUM_MAX; multiplexer++) {
-            bool ok = true;
-            channels_mask = 0xFF;
-            ok = ok && i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
-            ok = ok && i2c_read(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
-            ok = ok && channels_mask == 0xFF;
-            channels_mask = 0;
-            ok = ok && i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
-            ok = ok && i2c_read(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
-            ok = ok && channels_mask == 0;
-            multiplexers_mask |= ok ? 1 << multiplexer : 0;
-        }
-        ESP_LOGI(__func__, "multiplexers_mask for bus %i: %02x", bus, multiplexers_mask);
+        if(i2c_buses[bus].enabled) {
+            bool device_found = false;
 
-        if(multiplexers_mask) {
-            for(multiplexer = 0; multiplexer < I2C_PCA9548_NUM_MAX; multiplexer++)
-                if(multiplexers_mask & (1 << multiplexer))
-                    for(channel = 0; channel < 8; channel++)
-                        i2c_detect_channel(bus, multiplexer + 1, channel);
+            multiplexers_mask = 0;
+            for(multiplexer = 0; multiplexer < I2C_PCA9548_NUM_MAX; multiplexer++) {
+                bool ok = true;
+                channels_mask = 0xFF;
+                ok = ok && i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
+                ok = ok && i2c_read(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
+                ok = ok && channels_mask == 0xFF;
+                channels_mask = 0;
+                ok = ok && i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
+                ok = ok && i2c_read(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer, &channels_mask, 1);
+                ok = ok && channels_mask == 0;
+                multiplexers_mask |= ok ? 1 << multiplexer : 0;
+            }
+            ESP_LOGI(__func__, "multiplexers_mask for bus %i: %02x", bus, multiplexers_mask);
+
+            if(multiplexers_mask) {
+                device_found = true;
+                for(multiplexer = 0; multiplexer < I2C_PCA9548_NUM_MAX; multiplexer++)
+                    if(multiplexers_mask & (1 << multiplexer))
+                        for(channel = 0; channel < 8; channel++)
+                            i2c_detect_channel(bus, multiplexer + 1, channel);
+            }
+            else if(i2c_detect_channel(bus, 0, 0))
+                device_found = true;
+
+            if(!device_found) {
+                i2c_stop_bus(bus);
+                i2c_buses[bus].active = false;
+                ESP_LOGI(__func__, "disabling bus %i, no devices found.", bus);
+            }
+            else
+                i2c_buses[bus].active = true;
         }
-        else
-            i2c_detect_channel(bus, 0, 0);
     }
+    vTaskDelay (50 / portTICK_PERIOD_MS);  // Wait for I2C devices to stabilize after configuration
 }
 
-void i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, device_channel_t channel)
+bool i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, device_channel_t channel)
 {
+    bool device_found = false;
+
     if(multiplexer) {
         uint8_t channels_mask = 1 << channel;
         i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer - 1, &channels_mask, 1);
@@ -473,11 +541,12 @@ void i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, devi
                     .timestamp = -1,
                 };
                 if(i2c_detect_device(device.bus, device.part, device.address)) {
+                    device_found = true;
                     int device_index = devices_get_or_append(&device);
                     if(device_index >= 0) {
-                        char name[DEVICES_NAME_LENGTH];
-                        devices_build_name(device_index, name, sizeof(name), '_');
-                        ESP_LOGI(__func__, "Device found: %s", name);
+                        char path[DEVICES_PATH_LENGTH];
+                        devices_build_path(device_index, path, sizeof(path), '_');
+                        ESP_LOGI(__func__, "Device found: %s", path);
                     }
                     else
                         ESP_LOGE(__func__, "DEVICES_NUM_MAX reached");
@@ -488,6 +557,7 @@ void i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, devi
         uint8_t channels_mask = 0;
         i2c_write(i2c_buses[bus].port, I2C_PCA9548_ADDRESS + multiplexer - 1, &channels_mask, 1);
     }
+    return device_found;
 }
 
 bool i2c_detect_device(device_bus_t bus, device_part_t part, device_address_t address)

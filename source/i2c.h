@@ -20,6 +20,8 @@ typedef struct {
 	uint8_t		port;
 	uint8_t 	sda_pin;
 	uint8_t 	scl_pin;
+	bool		enabled;
+	bool		active;
 } i2c_bus_t;
 
 extern i2c_bus_t i2c_buses[];
@@ -31,15 +33,18 @@ bool i2c_write(uint8_t port, uint8_t address, uint8_t *buffer, size_t buffer_siz
 void i2c_init();
 bool i2c_read_from_nvs();
 bool i2c_write_to_nvs();
+bool i2c_using_gpio(uint8_t gpio);
 esp_err_t i2c_start();
+esp_err_t i2c_start_bus(uint8_t bus);
 esp_err_t i2c_stop();
+esp_err_t i2c_stop_bus(uint8_t bus);
 void i2c_set_power(bool state);
 void i2c_set_default();
 bool i2c_schema_handler(char *resource_name, bp_pack_t *writer);
 uint32_t i2c_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 void i2c_detect_devices();
-void i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, device_channel_t channel);
+bool i2c_detect_channel(device_bus_t bus, device_multiplexer_t multiplexer, device_channel_t channel);
 bool i2c_detect_device(device_bus_t bus, device_part_t part, device_address_t address);
 bool i2c_measure_device(devices_index_t device);
 

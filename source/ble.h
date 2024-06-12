@@ -38,7 +38,7 @@ bool ble_send_measurements();
 void ble_host_task(void *param);
 void ble_merge_measurements();
 bool ble_schema_handler(char *resource_name, bp_pack_t *writer);
-bool ble_measurements_update(node_address_t node, measurement_path_t path, device_address_t address, measurement_timestamp_t timestamp, measurement_value_t value);
+bool ble_measurements_update(node_address_t node, measurement_descriptor_t descriptor, device_address_t address, measurement_timestamp_t timestamp, measurement_value_t value);
 uint32_t ble_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *writer);
 
 

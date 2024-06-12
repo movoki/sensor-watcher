@@ -33,6 +33,7 @@ bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t le
     bool signature_verified = false;
     bp_length_t signed_data_length;
     bp_length_t signature_length;
+    bp_length_t payload_offset = 0;
     hmac_sha256_hash_t hash;
     hmac_sha256_hash_t signature;
 
@@ -44,6 +45,11 @@ bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t le
          bp_set_offset(&pm->writer, bp_get_offset(&pm->reader)) && bp_next(&pm->writer) && bp_next(&pm->writer)))   // point pm->writer to body
             response_code = PM_400_Bad_Request;
     else {
+        if(method_token >> 24 >= PM_200_OK)     // It is a reply, not a method
+            return 0;
+
+        payload_offset = bp_get_offset(&pm->writer);
+
         if(key) {
             bp_save_cursor(&pm->reader);
             if(!(bp_next(&pm->reader) &&                                                                                  // body
@@ -100,8 +106,12 @@ bp_length_t postman_handle_pack(postman_t *pm, bp_type_t *buffer, bp_length_t le
         bp_put_integer(&pm->writer, (response_code << 24) | (method_token & 0x00FFFFFF));
         bp_restore_cursor(&pm->writer);
 
-        if(key && signature_verified && !postman_put_signature(pm, now, id, key))
-            response_code = PM_500_Internal_Server_Error;
+        if(key && signature_verified) {
+            if(payload_offset == bp_get_offset(&pm->writer))  // no body, so put something to fill the place
+                bp_put_none(&pm->writer);
+            if(!postman_put_signature(pm, now, id, key))
+                response_code = PM_500_Internal_Server_Error;
+        }
     }
 
     if(response_code >= PM_400_Bad_Request) {       // if error, return only response_code and token

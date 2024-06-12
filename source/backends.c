@@ -92,9 +92,9 @@ bool backends_read_from_nvs()
             length = BACKEND_TEMPLATE_SEPARATOR_LENGTH;
             ok = ok && !nvs_get_str(handle, nvs_key, backends[i].template_row_separator, &length);
 
-            snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_n_sep", i % 255);
+            snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_p_sep", i % 255);
             length = BACKEND_TEMPLATE_SEPARATOR_LENGTH;
-            ok = ok && !nvs_get_str(handle, nvs_key, backends[i].template_name_separator, &length);
+            ok = ok && !nvs_get_str(handle, nvs_key, backends[i].template_path_separator, &length);
 
             snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_footer", i % 255);
             length = BACKEND_TEMPLATE_FOOTER_LENGTH;
@@ -152,8 +152,8 @@ bool backends_write_to_nvs()
             ok = ok && !nvs_set_str(handle, nvs_key, backends[i].template_row);
             snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_r_sep", i % 255);
             ok = ok && !nvs_set_str(handle, nvs_key, backends[i].template_row_separator);
-            snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_n_sep", i % 255);
-            ok = ok && !nvs_set_str(handle, nvs_key, backends[i].template_name_separator);
+            snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_p_sep", i % 255);
+            ok = ok && !nvs_set_str(handle, nvs_key, backends[i].template_path_separator);
             snprintf(nvs_key, sizeof(nvs_key), "%u_tmpl_footer", i % 255);
             ok = ok && !nvs_set_str(handle, nvs_key, backends[i].template_footer);
         }
@@ -297,7 +297,7 @@ static bool write_item_schema(bp_pack_t *writer)
                 ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_SEPARATOR_LENGTH);
             ok = ok && bp_finish_container(writer);
 
-            ok = ok && bp_put_string(writer, "template_name_separator");
+            ok = ok && bp_put_string(writer, "template_path_separator");
             ok = ok && bp_create_container(writer, BP_LIST);
                 ok = ok && bp_put_integer(writer, SCHEMA_STRING | SCHEMA_MAXIMUM_BYTES);
                 ok = ok && bp_put_integer(writer, BACKEND_TEMPLATE_SEPARATOR_LENGTH);
@@ -408,7 +408,7 @@ bool backend_pack(bp_pack_t *writer, uint32_t index)
     ok = ok && bp_put_string(writer, "template_header") && bp_put_string(writer, backends[index].template_header);
     ok = ok && bp_put_string(writer, "template_row") && bp_put_string(writer, backends[index].template_row);
     ok = ok && bp_put_string(writer, "template_row_separator") && bp_put_string(writer, backends[index].template_row_separator);
-    ok = ok && bp_put_string(writer, "template_name_separator") && bp_put_string(writer, backends[index].template_name_separator);
+    ok = ok && bp_put_string(writer, "template_path_separator") && bp_put_string(writer, backends[index].template_path_separator);
     ok = ok && bp_put_string(writer, "template_footer") && bp_put_string(writer, backends[index].template_footer);
     ok = ok && bp_finish_container(writer);
 
@@ -465,8 +465,8 @@ bool backend_unpack(bp_pack_t *reader, uint32_t index)
             ok = ok && bp_get_string(reader, backends[index].template_row, BACKEND_TEMPLATE_ROW_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
         else if(bp_match(reader, "template_row_separator"))
             ok = ok && bp_get_string(reader, backends[index].template_row_separator, BACKEND_TEMPLATE_SEPARATOR_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
-        else if(bp_match(reader, "template_name_separator"))
-            ok = ok && bp_get_string(reader, backends[index].template_name_separator, BACKEND_TEMPLATE_SEPARATOR_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
+        else if(bp_match(reader, "template_path_separator"))
+            ok = ok && bp_get_string(reader, backends[index].template_path_separator, BACKEND_TEMPLATE_SEPARATOR_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
         else if(bp_match(reader, "template_footer"))
             ok = ok && bp_get_string(reader, backends[index].template_footer, BACKEND_TEMPLATE_FOOTER_LENGTH / sizeof(bp_type_t)) != BP_INVALID_LENGTH;
         else bp_next(reader);

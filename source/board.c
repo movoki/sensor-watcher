@@ -6,6 +6,7 @@
 #include <esp_timer.h>
 #include <esp_chip_info.h>
 #include <esp_flash.h>
+#include <esp_pm.h>
 #include <nvs_flash.h>
 #include <driver/i2c.h>
 #include <driver/temperature_sensor.h>
@@ -30,9 +31,16 @@ temperature_sensor_handle_t cpu_temp_sensor = NULL;
 
 void board_init()
 {
+    board.model = 0;
+    board.log_level = ESP_LOG_INFO;
+
     esp_chip_info_t chip;
     esp_chip_info(&chip);
     board.processor = chip.model;
+
+    esp_pm_config_t pm_config;
+    esp_pm_get_configuration(&pm_config);
+    board.cpu_frequency = pm_config.max_freq_mhz;
 
     esp_base_mac_addr_get((uint8_t *) &board.id);
     board.id = __builtin_bswap64(board.id);
@@ -58,6 +66,12 @@ void board_configure()
     temperature_sensor_enable(cpu_temp_sensor);
     #endif
 
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = board.cpu_frequency,
+        .min_freq_mhz = board.cpu_frequency,
+    };
+    esp_pm_configure(&pm_config);
+
     switch(board.model) {
     case BOARD_MODEL_M5STACK_M5STICKC:
     case BOARD_MODEL_M5STACK_M5STICKC_PLUS:
@@ -82,11 +96,10 @@ bool board_read_from_nvs()
 
     err = nvs_open("board", NVS_READWRITE, &handle);
     if(err == ESP_OK) {
-        if(nvs_get_u32(handle, "model", &(board.model)) != ESP_OK)
-            board.model = 0;
-        if(nvs_get_u32(handle, "log_level", &(board.log_level)) != ESP_OK)
-            board.log_level = ESP_LOG_INFO;
-        nvs_get_u8(handle, "diagnostics", (uint8_t *) &(board.diagnostics));
+        nvs_get_u32(handle, "model", &board.model);
+        nvs_get_u32(handle, "log_level", &board.log_level);
+        nvs_get_u8(handle, "diagnostics", (uint8_t *) &board.diagnostics);
+        nvs_get_u16(handle, "cpu_frequency", &board.cpu_frequency);
         nvs_close(handle);
         ESP_LOGI(__func__, "done");
         return true;
@@ -108,6 +121,7 @@ bool board_write_to_nvs()
         ok = ok && !nvs_set_u32(handle, "model", board.model);
         ok = ok && !nvs_set_u32(handle, "log_level", board.log_level);
         ok = ok && !nvs_set_u8(handle, "diagnostics", board.diagnostics);
+        ok = ok && !nvs_set_u16(handle, "cpu_frequency", board.cpu_frequency);
         ok = ok && !nvs_commit(handle);
         nvs_close(handle);
         ESP_LOGI(__func__, "%s", ok ? "done" : "failed");
@@ -161,6 +175,16 @@ static bool write_resource_schema(bp_pack_t *writer)
                     ok = ok && bp_put_string(writer, "ESP32-S3");
                     ok = ok && bp_put_string(writer, "ESP32-C3");
                     ok = ok && bp_put_string(writer, "ESP32-C6");
+                ok = ok && bp_finish_container(writer);
+            ok = ok && bp_finish_container(writer);
+
+            ok = ok && bp_put_string(writer, "cpu_frequency");
+            ok = ok && bp_create_container(writer, BP_LIST);
+                ok = ok && bp_put_integer(writer, SCHEMA_INTEGER | SCHEMA_VALUES);
+                ok = ok && bp_create_container(writer, BP_LIST);
+                    ok = ok && bp_put_integer(writer, 80);
+                    ok = ok && bp_put_integer(writer, 160);
+                    ok = ok && bp_put_integer(writer, 240);
                 ok = ok && bp_finish_container(writer);
             ok = ok && bp_finish_container(writer);
 
@@ -225,6 +249,8 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
         ok = ok && bp_put_string(writer, id_string);
         ok = ok && bp_put_string(writer, "processor");
         ok = ok && bp_put_string(writer, board_get_processor_label());
+        ok = ok && bp_put_string(writer, "cpu_frequency");
+        ok = ok && bp_put_integer(writer, board.cpu_frequency);
         ok = ok && bp_put_string(writer, "flash_size");
         ok = ok && bp_put_integer(writer, board_get_flash_size());
         ok = ok && bp_put_string(writer, "model");
@@ -252,7 +278,6 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
                     else
                         ok = false;
                     board_configure();
-                    devices_buses_init();
                     devices_init();
                     measurements_init();
                     measurements_measure();
@@ -263,11 +288,27 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
                 }
                 else if(bp_match(reader, "diagnostics"))
                     board.diagnostics = bp_get_boolean(reader);
+                else if(bp_match(reader, "cpu_frequency")) {
+                    int freq = bp_get_integer(reader);
+                    if(freq == 80 || freq == 160 || freq == 240) {
+                        board.cpu_frequency = freq;
+                        esp_pm_config_t pm_config = {
+                            .max_freq_mhz = freq,
+                            .min_freq_mhz = freq,
+                        };
+                        esp_pm_configure(&pm_config);
+                    }
+                    else
+                        ok = false;
+                }
                 else bp_next(reader);
             }
             bp_close(reader);
-            ok = ok && board_write_to_nvs();
-            response = ok ? PM_204_Changed : PM_500_Internal_Server_Error;
+
+            if(ok)
+                response = board_write_to_nvs() ? PM_204_Changed : PM_500_Internal_Server_Error;
+            else
+                response = PM_400_Bad_Request;
         }
         return response;
     }
