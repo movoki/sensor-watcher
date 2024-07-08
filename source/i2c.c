@@ -355,6 +355,13 @@ void i2c_set_default()
         i2c_buses[1].scl_pin = 33;
         i2c_buses[1].speed = I2C_BUS_SPEED_DEFAULT;
         break;
+    case BOARD_MODEL_M5STACK_NANOC6:
+        i2c_buses_count = 1;
+        i2c_buses[0].port = 0;
+        i2c_buses[0].sda_pin = 2;
+        i2c_buses[0].scl_pin = 1;
+        i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+        break;
     case BOARD_MODEL_M5STACK_ATOMS3:
     case BOARD_MODEL_M5STACK_ATOMS3_LITE:
         i2c_buses_count = 2;
@@ -426,6 +433,13 @@ void i2c_set_default()
         i2c_buses[0].scl_pin = 7;
         i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
         break;
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C6:      // D4 D5
+        i2c_buses_count = 1;
+        i2c_buses[0].port = 0;
+        i2c_buses[0].sda_pin = 22;
+        i2c_buses[0].scl_pin = 23;
+        i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
+        break;
     case BOARD_MODEL_GENERIC:
         switch(board.processor) {
         case CHIP_ESP32:
@@ -446,8 +460,8 @@ void i2c_set_default()
         case CHIP_ESP32C6:
             i2c_buses_count = 1;
             i2c_buses[0].port = 0;
-            i2c_buses[0].sda_pin = 23;
-            i2c_buses[0].scl_pin = 22;
+            i2c_buses[0].sda_pin = 6;
+            i2c_buses[0].scl_pin = 7;
             i2c_buses[0].speed = I2C_BUS_SPEED_DEFAULT;
             break;
         default:

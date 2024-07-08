@@ -153,6 +153,16 @@ Most of the code is released under the GPL-3 license. Some libraries are under t
 
 # ChangeLog
 
+## 0.12
+
+- Added support for ESP32-C6 boards:
+    - SeeedStudio Xiao ESP32C6
+    - M5Stack NanoC6
+
+- Disabled the USB secondary console because its messages were messing with the Postman packets.
+
+- Added support for selecting the antenna to use in boards with multiple antennas like the Xiao ESP32C6.
+
 ## 0.11
 
 - Added support for defining I2C and 1-Wire buses with shared pins. This allows autodetecting I2C and 1-Wire devices on the same Grove port. Boards that have this enabled by default on Grove PORT-A:

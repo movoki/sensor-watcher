@@ -27,6 +27,8 @@ const char *board_model_labels[] = {
 	[BOARD_MODEL_ADAFRUIT_QT_PY_ESP32_S3] 	"adafruit_qt_py_esp32_s3",
 	[BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32S3] 	"seeedstudio_xiao_esp32s3",
 	[BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C3] 	"seeedstudio_xiao_esp32c3",
+	[BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C6] 	"seeedstudio_xiao_esp32c6",
+	[BOARD_MODEL_M5STACK_NANOC6] 			"m5stack_nanoc6",
 };
 
 const char *resource_labels[] = {

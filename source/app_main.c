@@ -267,8 +267,8 @@ void app_main(void)
     logs_init();        // order of inits is important!
     serial_init();
     nvs_init();         // 100 ms
-    wifi_init();        // 160 ms
     board_init();
+    wifi_init();        // 160 ms
     application_init();
     nodes_init();
     backends_init(); // 47 ms
@@ -615,6 +615,7 @@ void app_main(void)
                 ble_stop();
                 i2c_stop();
                 onewire_stop();
+                board_stop();
                 esp_sleep_enable_timer_wakeup(sleep_duration);
                 esp_deep_sleep_start();
                 // this is never reached

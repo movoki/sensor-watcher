@@ -330,6 +330,11 @@ void onewire_set_default()
         onewire_buses[1].data_pin = 32;         // PORT-A
         onewire_buses[1].power_pin = 26;
         break;
+    case BOARD_MODEL_M5STACK_NANOC6:
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 1;          // PORT-A
+        onewire_buses[0].power_pin = 2;
+        break;
     case BOARD_MODEL_M5STACK_ATOMS3:
     case BOARD_MODEL_M5STACK_ATOMS3_LITE:
         onewire_buses_count = 2;
@@ -364,6 +369,11 @@ void onewire_set_default()
         onewire_buses_count = 1;
         onewire_buses[0].data_pin = 2;
         onewire_buses[0].power_pin = 3;
+        break;
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C6:  // D0 D1
+        onewire_buses_count = 1;
+        onewire_buses[0].data_pin = 0;
+        onewire_buses[0].power_pin = 1;
         break;
     case BOARD_MODEL_GENERIC:
     default:

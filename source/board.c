@@ -9,6 +9,7 @@
 #include <esp_pm.h>
 #include <nvs_flash.h>
 #include <driver/i2c.h>
+#include <driver/gpio.h>
 #include <driver/temperature_sensor.h>
 
 #include "application.h"
@@ -32,6 +33,7 @@ temperature_sensor_handle_t cpu_temp_sensor = NULL;
 void board_init()
 {
     board.model = 0;
+    board.antenna = 0;
     board.log_level = ESP_LOG_INFO;
 
     esp_chip_info_t chip;
@@ -54,12 +56,6 @@ void board_init()
 
 void board_configure()
 {
-    gpio_config_t io_conf;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-
     #ifdef CONFIG_IDF_TARGET_ESP32S3
     temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
     temperature_sensor_install(&temp_sensor_config, &cpu_temp_sensor);
@@ -73,20 +69,45 @@ void board_configure()
     esp_pm_configure(&pm_config);
 
     switch(board.model) {
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C6: {
+            gpio_config_t io_conf = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = (1ULL << 14) | (1ULL << 3) };
+            gpio_config(&io_conf);
+            gpio_set_level(3, 0);
+            gpio_set_level(14, board.antenna ? 1 : 0);
+            break;
+        }
+    case BOARD_MODEL_M5STACK_NANOC6: {
+            led_gpio = 7;
+            gpio_config_t io_conf = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = 1ULL << led_gpio };
+            gpio_config(&io_conf);
+            gpio_set_level(led_gpio, 0);
+            break;
+        }
     case BOARD_MODEL_M5STACK_M5STICKC:
-    case BOARD_MODEL_M5STACK_M5STICKC_PLUS:
-        led_gpio = 10;
-        io_conf.pin_bit_mask = (1ULL << led_gpio);
-        gpio_config(&io_conf);
-        break;
-    case BOARD_MODEL_ADAFRUIT_ESP32_FEATHER_V2:
-        bus_power_gpio = 2;
-        io_conf.pin_bit_mask = (1ULL << bus_power_gpio);
-        gpio_config(&io_conf);
-        break;
+    case BOARD_MODEL_M5STACK_M5STICKC_PLUS: {
+            led_gpio = 10;
+            gpio_config_t io_conf = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = 1ULL << led_gpio };
+            gpio_config(&io_conf);
+            break;
+        }
+    case BOARD_MODEL_ADAFRUIT_ESP32_FEATHER_V2: {
+            bus_power_gpio = 2;
+            gpio_config_t io_conf = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = 1ULL << bus_power_gpio };
+            gpio_config(&io_conf);
+            break;
+        }
     }
+}
 
-    // board_set_led(0x0000FF);
+void board_stop()
+{
+    switch(board.model) {
+    case BOARD_MODEL_SEEEDSTUDIO_XIAO_ESP32C6: {
+            gpio_config_t io_conf = { .mode = GPIO_MODE_INPUT, .pin_bit_mask = (1ULL << 14) | (1ULL << 3) };
+            gpio_config(&io_conf);
+            break;
+        }
+    }
 }
 
 bool board_read_from_nvs()
@@ -98,6 +119,7 @@ bool board_read_from_nvs()
     if(err == ESP_OK) {
         nvs_get_u32(handle, "model", &board.model);
         nvs_get_u32(handle, "log_level", &board.log_level);
+        nvs_get_u8(handle, "antenna", &board.antenna);
         nvs_get_u8(handle, "diagnostics", (uint8_t *) &board.diagnostics);
         nvs_get_u16(handle, "cpu_frequency", &board.cpu_frequency);
         nvs_close(handle);
@@ -120,6 +142,7 @@ bool board_write_to_nvs()
     if(err == ESP_OK) {
         ok = ok && !nvs_set_u32(handle, "model", board.model);
         ok = ok && !nvs_set_u32(handle, "log_level", board.log_level);
+        ok = ok && !nvs_set_u8(handle, "antenna", board.antenna);
         ok = ok && !nvs_set_u8(handle, "diagnostics", board.diagnostics);
         ok = ok && !nvs_set_u16(handle, "cpu_frequency", board.cpu_frequency);
         ok = ok && !nvs_commit(handle);
@@ -257,6 +280,8 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
         ok = ok && bp_put_string(writer, board_model_labels[board.model < BOARD_MODEL_NUM_MAX ? board.model : 0]);
         ok = ok && bp_put_string(writer, "log_level");
         ok = ok && bp_put_integer(writer, board.log_level);
+        ok = ok && bp_put_string(writer, "antenna");
+        ok = ok && bp_put_integer(writer, board.antenna);
         ok = ok && bp_put_string(writer, "diagnostics");
         ok = ok && bp_put_boolean(writer, board.diagnostics);
         ok = ok && bp_finish_container(writer);
@@ -285,6 +310,10 @@ uint32_t board_resource_handler(uint32_t method, bp_pack_t *reader, bp_pack_t *w
                 else if(bp_match(reader, "log_level")) {
                     board.log_level = bp_get_integer(reader);
                     esp_log_level_set("*", board.log_level);
+                }
+                else if(bp_match(reader, "antenna")) {
+                    board.antenna = bp_get_integer(reader);
+                    board_configure();
                 }
                 else if(bp_match(reader, "diagnostics"))
                     board.diagnostics = bp_get_boolean(reader);
@@ -328,6 +357,10 @@ void board_measure()
 void board_set_led(uint32_t color) 
 {
     switch(board.model) {
+    case BOARD_MODEL_M5STACK_NANOC6:
+        if(led_gpio != 0xFF)
+            gpio_set_level(led_gpio, color ? 1 : 0);
+        break;
     case BOARD_MODEL_M5STACK_M5STICKC:
     case BOARD_MODEL_M5STACK_M5STICKC_PLUS:
         if(led_gpio != 0xFF)
